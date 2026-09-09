@@ -10,7 +10,8 @@ app.use(cors({
   origin: 'http://localhost:5173',
   credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
@@ -18,6 +19,7 @@ app.use('/api/complaints', require('./routes/complaints'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/ai', require('./routes/ai'));
 app.use('/api/admin', require('./routes/admin'));
+app.use('/api/gov', require('./routes/admin'));
 app.use('/api/decision-support', require('./routes/decisionSupport'));
 app.use('/api/predictive', require('./routes/predictive'));
 app.use('/api/worker', require('./routes/worker'));

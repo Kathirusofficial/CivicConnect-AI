@@ -169,6 +169,28 @@
   }
   .scrollbar-hide::-webkit-scrollbar { display: none; }
   .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+  .input-field {
+    background-color: #0f0b1a !important;
+    color: #ffffff !important;
+    border: 1px solid #3a2b4f !important;
+    caret-color: #ffffff !important;
+    border-radius: 0.75rem !important;
+    padding: 0.625rem 0.875rem !important;
+    transition: all 0.2s ease-in-out !important;
+  }
+  .input-field::placeholder {
+    color: #9ca3af !important;
+  }
+  .input-field:focus {
+    border-color: #06b6d4 !important;
+    outline: none !important;
+    box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.3) !important;
+  }
+  .input-field option {
+    background-color: #0f0b1a !important;
+    color: #ffffff !important;
+  }
 }
 
 @keyframes shimmer {

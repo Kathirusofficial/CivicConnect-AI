@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import {
@@ -7,9 +7,83 @@ import {
   Sparkles, Sliders, Check, X, FileText, Send, Eye
 } from 'lucide-react';
 import { governanceAdminApi, predictionsAdminApi } from '../../services/adminApi';
+import { useToast } from '../../components/ui/Toast';
+
+const ACTION_TYPES = [
+  'Drainage Cleaning',
+  'Road Repair',
+  'Water Supply Repair',
+  'Electricity Repair',
+  'Garbage Collection',
+  'Street Light Repair',
+  'Traffic Management',
+  'Emergency Response',
+  'Infrastructure Maintenance',
+  'Preventive Maintenance',
+  'Deploy Workers',
+  'Public Advisory',
+  'Inspect',
+  'Repair',
+  'Monitor',
+  'Increase Capacity',
+  'Other'
+];
+
+const DURATION_OPTIONS = [
+  '1 hour',
+  '2 hours',
+  '4 hours',
+  '8 hours',
+  '1 day',
+  '2 days',
+  '3 days',
+  '1 week'
+];
+
+const getDynamicRecommendation = (actionType, incident) => {
+  const area = incident?.area || 'the affected municipal sector';
+  
+  switch (actionType) {
+    case 'Drainage Cleaning':
+      return `Dispatch drainage clearing unit with high-pressure suction equipment to unclog storm drains and prevent overflow in ${area}.`;
+    case 'Road Repair':
+      return `Deploy road maintenance crew to inspect and repair structural road and asphalt damage at ${area}.`;
+    case 'Water Supply Repair':
+      return `Dispatch pipeline engineers and water supply technicians to address leaks and restore normal water distribution in ${area}.`;
+    case 'Electricity Repair':
+      return `Dispatch certified electrical engineers and linemen to repair power lines, transformers, and electrical grid infrastructure in ${area}.`;
+    case 'Garbage Collection':
+      return `Deploy municipal sanitation fleet and waste collection crews to clear accumulated refuse and sanitize public bins in ${area}.`;
+    case 'Street Light Repair':
+      return `Dispatch electrical technicians to repair wiring and replace non-functioning street light fixtures in ${area}.`;
+    case 'Emergency Response':
+      return `Dispatch emergency civic response unit to ${area} to contain immediate public safety hazards.`;
+    case 'Traffic Management':
+      return `Coordinate with traffic marshals to establish traffic diversions and restore normal vehicular flow around ${area}.`;
+    case 'Infrastructure Maintenance':
+      return `Deploy civil maintenance crew for scheduled municipal infrastructure repairs across ${area}.`;
+    case 'Preventive Maintenance':
+      return `Execute preventive inspection and reinforcement protocols to mitigate emerging civic risk in ${area}.`;
+    case 'Deploy Workers':
+      return `Mobilize field operations workforce to provide targeted municipal support in ${area}.`;
+    case 'Public Advisory':
+      return `Issue civic advisory and deploy on-ground information personnel for residents in ${area}.`;
+    case 'Inspect':
+      return `Conduct comprehensive on-site engineering assessment and structural safety audit in ${area}.`;
+    case 'Repair':
+      return `Initiate emergency structural repair and corrective maintenance operations in ${area}.`;
+    case 'Monitor':
+      return `Establish continuous IoT sensor monitoring and automated incident tracking in ${area}.`;
+    case 'Increase Capacity':
+      return `Scale up municipal processing capacity, reserve equipment, and on-duty personnel in ${area}.`;
+    default:
+      return incident?.recommendedAction || `Execute targeted field intervention and monitor civic recovery in ${area}.`;
+  }
+};
 
 export const AdminGovernanceCommandCenterPage = () => {
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const [overview, setOverview] = useState(null);
   const [incidents, setIncidents] = useState([]);
   const [warnings, setWarnings] = useState([]);
@@ -21,9 +95,10 @@ export const AdminGovernanceCommandCenterPage = () => {
   const [selectedIncident, setSelectedIncident] = useState(null);
   const [actionModalOpen, setActionModalOpen] = useState(false);
   const [planTitle, setPlanTitle] = useState('');
-  const [planActionType, setPlanActionType] = useState('Inspect');
-  const [planWorkersCount, setPlanWorkersCount] = useState(1);
-  const [planDuration, setPlanDuration] = useState('24 Hours');
+  const [planActionType, setPlanActionType] = useState('Road Repair');
+  const [planWorkersCount, setPlanWorkersCount] = useState(3);
+  const [planDuration, setPlanDuration] = useState('2 days');
+  const [formErrors, setFormErrors] = useState({});
   const [submittingAction, setSubmittingAction] = useState(false);
 
   const fetchAll = async () => {
@@ -56,8 +131,10 @@ export const AdminGovernanceCommandCenterPage = () => {
     try {
       await governanceAdminApi.recalculate();
       await fetchAll();
+      addToast?.({ type: 'success', message: 'Autonomous orchestration recalculation complete.' });
     } catch (err) {
       console.error('Recalculate error:', err);
+      addToast?.({ type: 'error', message: 'Failed to recalculate governance orchestration.' });
     } finally {
       setRecalculating(false);
     }
@@ -67,35 +144,86 @@ export const AdminGovernanceCommandCenterPage = () => {
     try {
       await governanceAdminApi.acknowledgeIncident(id);
       setIncidents(prev => prev.map(inc => inc._id === id ? { ...inc, status: 'Acknowledged' } : inc));
+      addToast?.({ type: 'success', message: 'Governance incident acknowledged.' });
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to acknowledge');
+      addToast?.({ type: 'error', message: err.response?.data?.message || 'Failed to acknowledge incident.' });
     }
   };
 
   const handleOpenActionModal = (incident) => {
     setSelectedIncident(incident);
-    setPlanTitle(`Action Plan: ${incident.title}`);
-    setPlanActionType(incident.incidentType === 'Civic Hotspot' ? 'Inspect' : (incident.incidentType === 'Emergency Cluster' ? 'Repair' : 'Deploy Workers'));
-    setPlanWorkersCount(Math.ceil(incident.riskScore / 30) || 1);
+
+    // Sanitize title to remove any accidental emojis or unwanted characters
+    const rawTitle = incident.title || '';
+    const cleanTitle = rawTitle
+      .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+      .replace(/[^\w\s-:,.]/g, '')
+      .trim();
+
+    setPlanTitle(cleanTitle ? `Action Plan: ${cleanTitle}` : 'Action Plan: Municipal Response');
+
+    // Smart default action type based on department / incident context
+    let defaultActionType = 'Infrastructure Maintenance';
+    const dept = (incident.department || '').toLowerCase();
+    const type = (incident.incidentType || '').toLowerCase();
+
+    if (dept.includes('road')) defaultActionType = 'Road Repair';
+    else if (dept.includes('water')) defaultActionType = 'Water Supply Repair';
+    else if (dept.includes('electric') || dept.includes('power')) defaultActionType = 'Electricity Repair';
+    else if (dept.includes('garbage') || dept.includes('sanitation')) defaultActionType = 'Garbage Collection';
+    else if (dept.includes('drain')) defaultActionType = 'Drainage Cleaning';
+    else if (dept.includes('light')) defaultActionType = 'Street Light Repair';
+    else if (dept.includes('traffic')) defaultActionType = 'Traffic Management';
+    else if (type.includes('emergency')) defaultActionType = 'Emergency Response';
+
+    setPlanActionType(defaultActionType);
+    setPlanWorkersCount(Math.min(20, Math.max(1, Math.ceil((incident.riskScore || 30) / 25))) || 3);
+    setPlanDuration('2 days');
+    setFormErrors({});
     setActionModalOpen(true);
+  };
+
+  const validateForm = () => {
+    const errors = {};
+    if (!planTitle.trim()) {
+      errors.title = 'Plan title is required.';
+    }
+    if (!planActionType) {
+      errors.actionType = 'Action type is required.';
+    }
+    const workersNum = Number(planWorkersCount);
+    if (!planWorkersCount || isNaN(workersNum) || workersNum < 1 || workersNum > 100) {
+      errors.requiredWorkers = 'Required workers must be between 1 and 100.';
+    }
+    if (!planDuration) {
+      errors.estimatedDuration = 'Estimated duration is required.';
+    }
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const handleCreateActionPlan = async (e) => {
     e.preventDefault();
     if (!selectedIncident) return;
+    if (!validateForm()) return;
+
     setSubmittingAction(true);
     try {
+      const finalDescription = getDynamicRecommendation(planActionType, selectedIncident);
       await governanceAdminApi.createActionPlan(selectedIncident._id, {
-        title: planTitle,
+        title: planTitle.trim(),
         actionType: planActionType,
-        requiredWorkers: planWorkersCount,
+        requiredWorkers: Number(planWorkersCount),
         estimatedDuration: planDuration,
-        description: selectedIncident.recommendedAction
+        description: finalDescription
       });
       setIncidents(prev => prev.map(inc => inc._id === selectedIncident._id ? { ...inc, status: 'Action Planned' } : inc));
       setActionModalOpen(false);
+      setFormErrors({});
+      addToast?.({ type: 'success', message: 'Municipal Action Plan created and approved successfully!' });
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to create action plan');
+      console.error('Failed to create action plan:', err);
+      addToast?.({ type: 'error', message: err.response?.data?.message || 'Failed to create action plan.' });
     } finally {
       setSubmittingAction(false);
     }
@@ -376,90 +504,173 @@ export const AdminGovernanceCommandCenterPage = () => {
       {/* 4. ACTION PLAN CREATION MODAL */}
       <AnimatePresence>
         {actionModalOpen && selectedIncident && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="p-6 rounded-3xl bg-[#161b26] border border-cyan-500/40 w-full max-w-lg shadow-2xl space-y-4"
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.2 }}
+              className="p-6 sm:p-7 rounded-3xl bg-[#120f24] border border-cyan-500/40 w-full max-w-xl shadow-[0_0_50px_rgba(0,0,0,0.8)] space-y-5"
             >
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <FileText size={18} className="text-cyan-400" /> Create Municipal Action Plan
-                </h3>
-                <button onClick={() => setActionModalOpen(false)} className="text-surface-400 hover:text-white">
-                  <X size={18} />
+              {/* Modal Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-surface-800/80">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                    <FileText size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white tracking-wide">
+                      Create Municipal Action Plan
+                    </h3>
+                    <p className="text-[11px] text-surface-400 font-medium">
+                      Incident #{selectedIncident._id?.slice(-6)?.toUpperCase()} • {selectedIncident.area || 'Municipal Sector'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setActionModalOpen(false)}
+                  className="w-8 h-8 rounded-lg bg-surface-800/60 hover:bg-surface-700 text-surface-400 hover:text-white flex items-center justify-center transition-colors"
+                >
+                  <X size={16} />
                 </button>
               </div>
 
+              {/* Modal Form */}
               <form onSubmit={handleCreateActionPlan} className="space-y-4 text-xs">
+                {/* Plan Title */}
                 <div>
-                  <label className="text-surface-400 uppercase font-bold block mb-1">Plan Title</label>
+                  <label className="text-[11px] text-surface-300 font-bold uppercase tracking-wider block mb-1.5">
+                    Plan Title <span className="text-red-400">*</span>
+                  </label>
                   <input
                     type="text"
                     value={planTitle}
-                    onChange={(e) => setPlanTitle(e.target.value)}
-                    required
-                    className="input-field w-full text-xs"
+                    onChange={(e) => {
+                      setPlanTitle(e.target.value);
+                      if (formErrors.title) setFormErrors(prev => ({ ...prev, title: null }));
+                    }}
+                    placeholder="e.g. Action Plan: Water Pipeline Repair"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f0b1a] text-white border border-[#3a2b4f] focus:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-400 text-xs font-medium placeholder-surface-500 transition-all"
                   />
+                  {formErrors.title && (
+                    <p className="text-red-400 text-[11px] mt-1.5 flex items-center gap-1 font-medium">
+                      <AlertTriangle size={12} /> {formErrors.title}
+                    </p>
+                  )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                {/* 2-Column: Action Type & Required Workers */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div>
-                    <label className="text-surface-400 uppercase font-bold block mb-1">Action Type</label>
+                    <label className="text-[11px] text-surface-300 font-bold uppercase tracking-wider block mb-1.5">
+                      Action Type <span className="text-red-400">*</span>
+                    </label>
                     <select
                       value={planActionType}
-                      onChange={(e) => setPlanActionType(e.target.value)}
-                      className="input-field w-full text-xs"
+                      onChange={(e) => {
+                        setPlanActionType(e.target.value);
+                        if (formErrors.actionType) setFormErrors(prev => ({ ...prev, actionType: null }));
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f0b1a] text-white border border-[#3a2b4f] focus:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-400 text-xs font-medium transition-all cursor-pointer"
                     >
-                      {['Inspect', 'Repair', 'Preventive Maintenance', 'Deploy Workers', 'Increase Capacity', 'Monitor', 'Public Advisory'].map(t => (
-                        <option key={t} value={t}>{t}</option>
+                      {ACTION_TYPES.map(type => (
+                        <option key={type} value={type} className="bg-[#0f0b1a] text-white py-1">
+                          {type}
+                        </option>
                       ))}
                     </select>
+                    {formErrors.actionType && (
+                      <p className="text-red-400 text-[11px] mt-1.5 flex items-center gap-1 font-medium">
+                        <AlertTriangle size={12} /> {formErrors.actionType}
+                      </p>
+                    )}
                   </div>
 
                   <div>
-                    <label className="text-surface-400 uppercase font-bold block mb-1">Required Workers</label>
+                    <label className="text-[11px] text-surface-300 font-bold uppercase tracking-wider block mb-1.5">
+                      Required Workers <span className="text-red-400">*</span>
+                    </label>
                     <input
                       type="number"
                       min="1"
-                      max="10"
+                      max="100"
                       value={planWorkersCount}
-                      onChange={(e) => setPlanWorkersCount(Number(e.target.value))}
-                      className="input-field w-full text-xs"
+                      onChange={(e) => {
+                        setPlanWorkersCount(e.target.value);
+                        if (formErrors.requiredWorkers) setFormErrors(prev => ({ ...prev, requiredWorkers: null }));
+                      }}
+                      placeholder="1 - 100"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f0b1a] text-white border border-[#3a2b4f] focus:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-400 text-xs font-medium placeholder-surface-500 transition-all"
                     />
+                    {formErrors.requiredWorkers && (
+                      <p className="text-red-400 text-[11px] mt-1.5 flex items-center gap-1 font-medium">
+                        <AlertTriangle size={12} /> {formErrors.requiredWorkers}
+                      </p>
+                    )}
                   </div>
                 </div>
 
+                {/* Estimated Duration */}
                 <div>
-                  <label className="text-surface-400 uppercase font-bold block mb-1">Estimated Duration</label>
-                  <input
-                    type="text"
+                  <label className="text-[11px] text-surface-300 font-bold uppercase tracking-wider block mb-1.5">
+                    Estimated Duration <span className="text-red-400">*</span>
+                  </label>
+                  <select
                     value={planDuration}
-                    onChange={(e) => setPlanDuration(e.target.value)}
-                    className="input-field w-full text-xs"
-                  />
+                    onChange={(e) => {
+                      setPlanDuration(e.target.value);
+                      if (formErrors.estimatedDuration) setFormErrors(prev => ({ ...prev, estimatedDuration: null }));
+                    }}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#0f0b1a] text-white border border-[#3a2b4f] focus:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-400 text-xs font-medium transition-all cursor-pointer"
+                  >
+                    {DURATION_OPTIONS.map(duration => (
+                      <option key={duration} value={duration} className="bg-[#0f0b1a] text-white py-1">
+                        {duration}
+                      </option>
+                    ))}
+                  </select>
+                  {formErrors.estimatedDuration && (
+                    <p className="text-red-400 text-[11px] mt-1.5 flex items-center gap-1 font-medium">
+                      <AlertTriangle size={12} /> {formErrors.estimatedDuration}
+                    </p>
+                  )}
                 </div>
 
-                <div className="p-3 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-surface-300">
-                  <span className="font-bold text-cyan-300 block mb-0.5">Recommended Action Reference:</span>
-                  <p>{selectedIncident.recommendedAction}</p>
+                {/* Dynamic Recommended Action Reference */}
+                <div className="p-3.5 rounded-2xl bg-cyan-950/30 border border-cyan-500/25 space-y-1">
+                  <span className="text-[11px] font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles size={13} className="text-cyan-400" /> Recommended Action Reference:
+                  </span>
+                  <p className="text-xs text-surface-200 leading-relaxed font-normal">
+                    {getDynamicRecommendation(planActionType, selectedIncident)}
+                  </p>
                 </div>
 
-                <div className="flex gap-2 pt-2">
+                {/* Action Buttons */}
+                <div className="flex gap-2.5 pt-2">
                   <button
                     type="button"
                     onClick={() => setActionModalOpen(false)}
-                    className="flex-1 py-2.5 rounded-xl bg-surface-800 text-surface-300 font-bold hover:bg-surface-700"
+                    className="px-4 py-2.5 rounded-xl bg-surface-800 hover:bg-surface-700 text-surface-300 hover:text-white font-bold text-xs transition-all border border-surface-700/60"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={submittingAction}
-                    className="flex-1 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold disabled:opacity-50 flex items-center justify-center gap-1.5"
+                    className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-cyan-900/30 disabled:opacity-50 flex items-center justify-center gap-2 transition-all cursor-pointer"
                   >
-                    {submittingAction ? 'Approving...' : 'Approve & Create Plan'}
+                    {submittingAction ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" />
+                        <span>Approving Plan...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check size={14} />
+                        <span>Approve & Create Plan</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </form>

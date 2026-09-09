@@ -7,6 +7,7 @@ const Department = require('../models/Department');
 const Worker = require('../models/Worker');
 const Notification = require('../models/Notification');
 const decisionSupportService = require('../services/decisionSupportService');
+const aiService = require('../services/aiService');
 
 // All routes require auth + admin role
 router.use(protect, admin);
@@ -144,15 +145,163 @@ router.get('/complaints', async (req, res) => {
   }
 });
 
-// GET single complaint detail
-router.get('/complaints/:id', async (req, res) => {
+// Helper to resolve department by ID, slug or name
+const resolveDepartmentDoc = async (deptParam) => {
+  if (!deptParam) return null;
+  const mongoose = require('mongoose');
+  if (mongoose.Types.ObjectId.isValid(deptParam)) {
+    const doc = await Department.findById(deptParam);
+    if (doc) return doc;
+  }
+  
+  const slugMap = {
+    'road': 'Road Department',
+    'road-department': 'Road Department',
+    'roads': 'Road Department',
+    'water': 'Water Supply',
+    'water-supply': 'Water Supply',
+    'electricity': 'Electricity',
+    'power': 'Electricity',
+    'garbage': 'Garbage Collection',
+    'garbage-collection': 'Garbage Collection',
+    'sanitation': 'Garbage Collection',
+    'traffic': 'Traffic Management',
+    'traffic-management': 'Traffic Management',
+    'drainage': 'Drainage',
+    'street-lights': 'Street Lights',
+    'street-light': 'Street Lights',
+    'streetlights': 'Street Lights',
+    'municipality': 'Municipality'
+  };
+
+  const normalized = deptParam.toLowerCase().trim();
+  const mappedName = slugMap[normalized];
+  if (mappedName) {
+    const doc = await Department.findOne({ name: { $regex: new RegExp(`^${mappedName}$`, 'i') } });
+    if (doc) return doc;
+  }
+
+  const cleanName = deptParam.replace(/[-_]/g, ' ');
+  let doc = await Department.findOne({ name: { $regex: new RegExp(`^${cleanName}$`, 'i') } });
+  if (!doc) {
+    doc = await Department.findOne({ name: { $regex: new RegExp(cleanName, 'i') } });
+  }
+  return doc;
+};
+
+// GET /departments/:department/complaints - Department-specific complaint management
+router.get('/departments/:department/complaints', async (req, res) => {
   try {
-    const complaint = await Complaint.findById(req.params.id)
-      .populate('citizen', 'name email avatar')
+    const mongoose = require('mongoose');
+    const { department: deptParam } = req.params;
+    const { search, status, priority, page = 1, limit = 10, sort = '-createdAt' } = req.query;
+
+    const deptDoc = await resolveDepartmentDoc(deptParam);
+    const deptName = deptDoc ? deptDoc.name : deptParam.replace(/[-_]/g, ' ');
+
+    // Match complaints by department Name regex or assignedDepartment ObjectId
+    const deptFilter = deptDoc 
+      ? { $or: [{ department: { $regex: new RegExp(deptDoc.name, 'i') } }, { assignedDepartment: deptDoc._id }] }
+      : { department: { $regex: new RegExp(deptName, 'i') } };
+
+    // Live Stats calculation for this specific department
+    const [total, pending, verified, assigned, inProgressDocs, resolved] = await Promise.all([
+      Complaint.countDocuments(deptFilter),
+      Complaint.countDocuments({ ...deptFilter, status: 'Pending' }),
+      Complaint.countDocuments({ ...deptFilter, status: 'Verified' }),
+      Complaint.countDocuments({ ...deptFilter, status: 'Assigned' }),
+      Complaint.countDocuments({ ...deptFilter, status: { $in: ['In Progress', 'Resolution Pending Verification'] } }),
+      Complaint.countDocuments({ ...deptFilter, status: { $in: ['Resolved', 'SOLVED'] } }),
+    ]);
+
+    const inProgress = verified + assigned + inProgressDocs;
+
+    // Build query with filters
+    const query = { ...deptFilter };
+
+    if (status) {
+      const statusLower = status.toLowerCase();
+      if (statusLower === 'pending') {
+        query.status = 'Pending';
+      } else if (statusLower === 'in progress' || statusLower === 'in_progress' || statusLower === 'inprogress') {
+        query.status = { $in: ['Verified', 'Assigned', 'In Progress', 'Resolution Pending Verification'] };
+      } else if (statusLower === 'solved' || statusLower === 'resolved') {
+        query.status = { $in: ['Resolved', 'SOLVED'] };
+      } else if (statusLower !== 'all') {
+        query.status = status;
+      }
+    }
+
+    if (priority && priority !== 'all' && priority !== 'All') {
+      query.priority = priority;
+    }
+
+    if (search && search.trim()) {
+      const searchRegex = { $regex: search.trim(), $options: 'i' };
+      const searchOr = [
+        { complaintId: searchRegex },
+        { title: searchRegex },
+        { address: searchRegex },
+        { landmark: searchRegex },
+        { description: searchRegex }
+      ];
+      query.$and = [{ ...deptFilter }, { $or: searchOr }];
+      delete query.$or;
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const filteredTotal = await Complaint.countDocuments(query);
+    const complaints = await Complaint.find(query)
+      .populate('citizen', 'name email avatar mobile')
       .populate('assignedWorker', 'name status contact department')
       .populate('assignedDepartment', 'name head contactEmail')
+      .populate('resolution.solvedBy', 'name email avatar role')
+      .populate('resolution.verifiedBy', 'name email avatar role')
+      .sort(sort)
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    res.json({
+      success: true,
+      department: deptDoc || { name: deptName },
+      stats: {
+        total,
+        pending,
+        inProgress,
+        solved: resolved
+      },
+      complaints,
+      total: filteredTotal,
+      page: parseInt(page),
+      totalPages: Math.ceil(filteredTotal / parseInt(limit))
+    });
+  } catch (error) {
+    console.error('Department complaints fetch error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Server error fetching department complaints' });
+  }
+});
+
+// GET single complaint detail (accepts MongoDB ObjectId or complaintId string)
+router.get('/complaints/:id', async (req, res) => {
+  try {
+    const mongoose = require('mongoose');
+    const { id } = req.params;
+    let query;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      query = { $or: [{ _id: id }, { complaintId: id }] };
+    } else {
+      query = { complaintId: id };
+    }
+
+    const complaint = await Complaint.findOne(query)
+      .populate('citizen', 'name email avatar mobile')
+      .populate('assignedWorker', 'name status contact department employeeId')
+      .populate('assignedDepartment', 'name head contactEmail')
+      .populate('resolution.solvedBy', 'name email avatar role')
+      .populate('resolution.verifiedBy', 'name email avatar role')
       .populate('duplicateOf', 'complaintId title status');
-    if (!complaint) return res.status(404).json({ message: 'Complaint not found' });
+
+    if (!complaint) return res.status(404).json({ success: false, message: 'Complaint not found' });
 
     let relatedDuplicates = [];
     if (complaint.duplicateGroupId) {
@@ -172,6 +321,303 @@ router.get('/complaints/:id', async (req, res) => {
   }
 });
 
+// PATCH update status (Pending -> In Progress, etc.)
+router.patch('/complaints/:id/status', async (req, res) => {
+  try {
+    const mongoose = require('mongoose');
+    const { status } = req.body;
+    const { id } = req.params;
+
+    if (!status) {
+      return res.status(400).json({ success: false, message: 'Status is required' });
+    }
+
+    if (['Resolved', 'SOLVED'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'To mark a complaint as solved, please use the Solve Complaint resolution workflow with a resolution proof photo.'
+      });
+    }
+
+    let query;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      query = { $or: [{ _id: id }, { complaintId: id }] };
+    } else {
+      query = { complaintId: id };
+    }
+
+    const complaint = await Complaint.findOne(query);
+    if (!complaint) {
+      return res.status(404).json({ success: false, message: 'Complaint not found' });
+    }
+
+    const prevStatus = complaint.status;
+    complaint.status = status;
+
+    complaint.timeline.push({
+      status,
+      title: `Status Updated to ${status}`,
+      description: `Government officer updated complaint status from ${prevStatus} to ${status}.`,
+      updatedBy: req.user._id,
+      createdAt: new Date()
+    });
+
+    await complaint.save();
+
+    // Recalculate decision support
+    try {
+      await decisionSupportService.calculateDecisionSupport(complaint);
+    } catch (dsErr) {
+      console.warn('Decision support update warning:', dsErr.message);
+    }
+
+    const trackingId = complaint.complaintId || complaint._id;
+    if (complaint.citizen) {
+      await Notification.create({
+        user: complaint.citizen,
+        title: 'Complaint Status Updated',
+        message: `Your complaint ${trackingId} status has been updated to "${status}".`,
+        type: 'status_update',
+        complaint: complaint._id,
+        link: `/complaints/${trackingId}`
+      });
+    }
+
+    const updated = await Complaint.findById(complaint._id)
+      .populate('citizen', 'name email avatar mobile')
+      .populate('assignedWorker', 'name status contact department')
+      .populate('assignedDepartment', 'name head contactEmail')
+      .populate('resolution.solvedBy', 'name email avatar role');
+
+    res.json({
+      success: true,
+      message: `Complaint status updated to ${status}`,
+      complaint: updated
+    });
+  } catch (error) {
+    console.error('Update complaint status error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Server error updating status' });
+  }
+});
+
+// POST /complaints/:id/verify-resolution - AI + Geolocation Verification Workflow
+const verifyResolutionHandler = async (req, res) => {
+  try {
+    const mongoose = require('mongoose');
+    const { notes, proofImage, latitude, longitude } = req.body;
+    const { id } = req.params;
+
+    if (!notes || !notes.trim()) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Resolution notes are required to verify resolution.' 
+      });
+    }
+
+    if (!proofImage || !proofImage.trim()) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Resolution proof photo is required to verify resolution.' 
+      });
+    }
+
+    let query;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      query = { $or: [{ _id: id }, { complaintId: id }] };
+    } else {
+      query = { complaintId: id };
+    }
+
+    const complaint = await Complaint.findOne(query);
+    if (!complaint) {
+      return res.status(404).json({ success: false, message: 'Complaint not found' });
+    }
+
+    // Run AI Multimodal Vision + Geolocation Verification
+    const verification = await aiService.verifyComplaintResolution({
+      complaint,
+      proofImage: proofImage.trim(),
+      resolutionNotes: notes.trim(),
+      officerLatitude: latitude,
+      officerLongitude: longitude,
+      userId: req.user._id
+    });
+
+    // Save verification result and draft proof on complaint
+    complaint.resolutionVerification = verification;
+    if (!complaint.resolution) complaint.resolution = {};
+    complaint.resolution.notes = notes.trim();
+    complaint.resolution.proofImage = proofImage.trim();
+
+    const prevStatus = complaint.status;
+    if (verification.status === 'VERIFIED') {
+      complaint.status = 'Resolution Pending Verification';
+    } else if (verification.status === 'REVIEW_REQUIRED') {
+      complaint.status = 'REVIEW_REQUIRED';
+    } else if (verification.status === 'REJECTED') {
+      complaint.status = 'VERIFICATION_FAILED';
+    }
+
+    complaint.timeline.push({
+      status: complaint.status,
+      title: `Resolution Verification: ${verification.status}`,
+      description: `AI & GPS verification performed by ${req.user.name}. Confidence: ${verification.confidence}%. ${verification.aiReason}`,
+      updatedBy: req.user._id,
+      createdAt: new Date()
+    });
+
+    await complaint.save();
+
+    const updated = await Complaint.findById(complaint._id)
+      .populate('citizen', 'name email avatar mobile')
+      .populate('assignedWorker', 'name status contact department employeeId')
+      .populate('assignedDepartment', 'name head contactEmail')
+      .populate('resolution.solvedBy', 'name email avatar role')
+      .populate('resolution.verifiedBy', 'name email avatar role');
+
+    return res.json({
+      success: true,
+      verification,
+      complaint: updated,
+      message: verification.status === 'VERIFIED'
+        ? 'AI & GPS Resolution Verification passed! You can now solve the complaint.'
+        : verification.status === 'REVIEW_REQUIRED'
+          ? 'Verification requires supervisor review or higher clarity proof image.'
+          : 'Verification rejected. Please ensure you are on-site with matching photographic evidence.'
+    });
+  } catch (error) {
+    console.error('Verify resolution error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Server error verifying resolution' });
+  }
+};
+
+router.post('/complaints/:id/verify-resolution', verifyResolutionHandler);
+
+// POST /complaints/:id/resolve - Full Resolution Workflow (Officer solves complaint with proof photo)
+const resolveComplaintHandler = async (req, res) => {
+  try {
+    const mongoose = require('mongoose');
+    const { notes, proofImage } = req.body;
+    const { id } = req.params;
+
+    let query;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      query = { $or: [{ _id: id }, { complaintId: id }] };
+    } else {
+      query = { complaintId: id };
+    }
+
+    const complaint = await Complaint.findOne(query);
+    if (!complaint) {
+      return res.status(404).json({ success: false, message: 'Complaint not found' });
+    }
+
+    // STRICT GUARD: Must have verified resolution
+    if (!complaint.resolutionVerification || complaint.resolutionVerification.status !== 'VERIFIED') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Cannot solve complaint without valid AI and GPS resolution verification. Please run Verify Resolution first.' 
+      });
+    }
+
+    const resolvedNotes = (notes && notes.trim()) || complaint.resolution?.notes || complaint.resolutionVerification?.aiReason || 'Resolved by field operations.';
+    const resolvedProofImage = (proofImage && proofImage.trim()) || complaint.resolution?.proofImage || '';
+
+    const prevStatus = complaint.status;
+    complaint.status = 'Resolved';
+
+    complaint.resolution = {
+      status: 'Resolved',
+      notes: resolvedNotes,
+      proofImage: resolvedProofImage,
+      solvedBy: req.user._id,
+      solvedAt: new Date(),
+      verifiedBy: req.user._id,
+      verifiedAt: new Date(),
+      rejectionReason: ''
+    };
+
+    if (!complaint.fieldWork) complaint.fieldWork = {};
+    complaint.fieldWork.resolvedAt = new Date();
+
+    // Add resolution proof to evidence
+    if (resolvedProofImage) {
+      if (!complaint.evidence) complaint.evidence = [];
+      complaint.evidence.push({
+        type: 'after',
+        url: resolvedProofImage,
+        description: resolvedNotes,
+        uploadedBy: req.user._id,
+        uploadedAt: new Date()
+      });
+    }
+
+    // Add timeline record
+    complaint.timeline.push({
+      status: 'Resolved',
+      title: 'Complaint Marked as SOLVED (AI & GPS Verified)',
+      description: `Officially solved by ${req.user.name}. AI Confidence: ${complaint.resolutionVerification.confidence}%. Notes: "${resolvedNotes}"`,
+      updatedBy: req.user._id,
+      createdAt: new Date()
+    });
+
+    // Release assigned worker
+    if (complaint.assignedWorker) {
+      await Worker.findByIdAndUpdate(complaint.assignedWorker, { status: 'Available' });
+    }
+
+    // Update department stats
+    if (prevStatus !== 'Resolved' && prevStatus !== 'SOLVED') {
+      const deptQuery = complaint.assignedDepartment 
+        ? { _id: complaint.assignedDepartment } 
+        : { name: complaint.department };
+      await Department.findOneAndUpdate(deptQuery, { $inc: { 'stats.resolvedComplaints': 1 } });
+    }
+
+    await complaint.save();
+
+    // Recalculate decision support
+    try {
+      await decisionSupportService.calculateDecisionSupport(complaint);
+    } catch (dsErr) {
+      console.warn('Decision support update warning on resolve:', dsErr.message);
+    }
+
+    const trackingId = complaint.complaintId || complaint._id;
+
+    // Notify Citizen
+    if (complaint.citizen) {
+      await Notification.create({
+        user: complaint.citizen,
+        title: 'Complaint Solved',
+        message: `Your complaint ${trackingId} has been successfully resolved and verified by government operations.`,
+        type: 'status_update',
+        complaint: complaint._id,
+        link: `/complaints/${trackingId}`
+      });
+    }
+
+    const updated = await Complaint.findById(complaint._id)
+      .populate('citizen', 'name email avatar mobile')
+      .populate('assignedWorker', 'name status contact department employeeId')
+      .populate('assignedDepartment', 'name head contactEmail')
+      .populate('resolution.solvedBy', 'name email avatar role')
+      .populate('resolution.verifiedBy', 'name email avatar role');
+
+    res.json({
+      success: true,
+      message: 'Complaint solved successfully',
+      complaint: updated
+    });
+  } catch (error) {
+    console.error('Resolve complaint error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Server error solving complaint' });
+  }
+};
+
+router.post('/complaints/:id/resolve', resolveComplaintHandler);
+router.patch('/complaints/:id/resolve', resolveComplaintHandler);
+
 // PATCH update complaint (status, priority, worker, department, remarks)
 router.patch('/complaints/:id', async (req, res) => {
   try {
@@ -179,6 +625,15 @@ router.patch('/complaints/:id', async (req, res) => {
 
     const complaint = await Complaint.findById(req.params.id);
     if (!complaint) return res.status(404).json({ message: 'Complaint not found' });
+
+    if (['Resolved', 'SOLVED'].includes(status)) {
+      if (!complaint.resolutionVerification || complaint.resolutionVerification.status !== 'VERIFIED') {
+        return res.status(400).json({
+          success: false,
+          message: 'To mark a complaint as solved, you must first complete AI & GPS Resolution Verification with photographic proof.'
+        });
+      }
+    }
 
     const prevStatus = complaint.status;
     const prevWorkerId = complaint.assignedWorker ? complaint.assignedWorker.toString() : null;
@@ -519,11 +974,19 @@ router.get('/departments', async (req, res) => {
     const departments = await Department.find();
     // Attach live complaint counts & AI Workload Intelligence
     const depts = await Promise.all(departments.map(async (dept) => {
-      const total = await Complaint.countDocuments({ department: dept.name });
-      const pending = await Complaint.countDocuments({ department: dept.name, status: 'Pending' });
-      const verified = await Complaint.countDocuments({ department: dept.name, status: 'Verified' });
-      const inProgress = await Complaint.countDocuments({ department: dept.name, status: { $in: ['Assigned', 'In Progress'] } });
-      const resolved = await Complaint.countDocuments({ department: dept.name, status: 'Resolved' });
+      const deptFilter = { 
+        $or: [
+          { department: { $regex: new RegExp(`^${dept.name}$`, 'i') } },
+          { department: { $regex: new RegExp(dept.name, 'i') } },
+          { assignedDepartment: dept._id }
+        ] 
+      };
+
+      const total = await Complaint.countDocuments(deptFilter);
+      const pending = await Complaint.countDocuments({ ...deptFilter, status: 'Pending' });
+      const verified = await Complaint.countDocuments({ ...deptFilter, status: 'Verified' });
+      const inProgress = await Complaint.countDocuments({ ...deptFilter, status: { $in: ['Assigned', 'In Progress', 'Resolution Pending Verification'] } });
+      const resolved = await Complaint.countDocuments({ ...deptFilter, status: { $in: ['Resolved', 'SOLVED'] } });
       const activeCount = pending + verified + inProgress;
 
       const workerCount = await Worker.countDocuments({ department: dept._id });
@@ -538,7 +1001,7 @@ router.get('/departments', async (req, res) => {
 
       // Find top unresolved priority
       const topComp = await Complaint.findOne({
-        department: dept.name,
+        ...deptFilter,
         status: { $in: ['Pending', 'Verified', 'Assigned', 'In Progress'] }
       }).sort({ 'decisionSupport.priorityScore': -1, createdAt: -1 });
 
@@ -546,7 +1009,7 @@ router.get('/departments', async (req, res) => {
 
       return {
         ...dept.toObject(),
-        liveStats: { total, pending, inProgress, resolved, active: activeCount },
+        liveStats: { total, pending, inProgress: verified + inProgress, resolved, active: activeCount },
         workerCount,
         availableWorkers,
         busyWorkers,

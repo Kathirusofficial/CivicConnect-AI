@@ -1,4 +1,4 @@
-﻿const mongoose = require('mongoose');
+const mongoose = require('mongoose');
 
 const governanceActionSchema = new mongoose.Schema({
   incidentId: {
@@ -10,13 +10,23 @@ const governanceActionSchema = new mongoose.Schema({
   actionType: {
     type: String,
     enum: [
-      'Inspect',
-      'Repair',
+      'Drainage Cleaning',
+      'Road Repair',
+      'Water Supply Repair',
+      'Electricity Repair',
+      'Garbage Collection',
+      'Street Light Repair',
+      'Traffic Management',
+      'Emergency Response',
+      'Infrastructure Maintenance',
       'Preventive Maintenance',
       'Deploy Workers',
-      'Increase Capacity',
+      'Public Advisory',
+      'Inspect',
+      'Repair',
       'Monitor',
-      'Public Advisory'
+      'Increase Capacity',
+      'Other'
     ],
     required: true
   },

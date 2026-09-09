@@ -18,7 +18,7 @@ const complaintSchema = new mongoose.Schema({
   },
   status: { 
     type: String, 
-    enum: ['Pending', 'Verified', 'Assigned', 'In Progress', 'Resolution Pending Verification', 'Resolved', 'Rejected', 'Reopened'], 
+    enum: ['Pending', 'Verified', 'Assigned', 'In Progress', 'Resolution Pending Verification', 'VERIFICATION_FAILED', 'REVIEW_REQUIRED', 'Resolved', 'SOLVED', 'Rejected', 'Reopened'], 
     default: 'Pending' 
   },
   address: { type: String, required: true },
@@ -209,15 +209,40 @@ const complaintSchema = new mongoose.Schema({
   resolution: {
     status: { 
       type: String, 
-      enum: ['Not Submitted', 'Pending Verification', 'Submitted', 'Pending', 'Approved', 'Rejected'], 
+      enum: ['Not Submitted', 'Pending Verification', 'Submitted', 'Pending', 'Approved', 'Rejected', 'Resolved', 'SOLVED'], 
       default: 'Not Submitted' 
     },
     notes: { type: String, default: '' },
+    proofImage: { type: String, default: '' },
     submittedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Worker' },
     submittedAt: { type: Date },
     verifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     verifiedAt: { type: Date },
+    solvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    solvedAt: { type: Date },
     rejectionReason: { type: String, default: '' }
+  },
+  resolutionVerification: {
+    status: {
+      type: String,
+      enum: ['NOT_VERIFIED', 'VERIFIED', 'REJECTED', 'REVIEW_REQUIRED'],
+      default: 'NOT_VERIFIED'
+    },
+    confidence: { type: Number, default: 0 },
+    imageRelevant: { type: Boolean, default: false },
+    problemDetected: { type: Boolean, default: false },
+    matchesComplaint: { type: Boolean, default: false },
+    resolutionEvidenceDetected: { type: Boolean, default: false },
+    locationVerified: { type: Boolean, default: false },
+    officerLatitude: { type: Number, default: null },
+    officerLongitude: { type: Number, default: null },
+    complaintLatitude: { type: Number, default: null },
+    complaintLongitude: { type: Number, default: null },
+    distanceMeters: { type: Number, default: null },
+    aiReason: { type: String, default: '' },
+    recommendation: { type: String, default: '' },
+    verifiedAt: { type: Date, default: null },
+    verifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }
   },
   evidence: [{
     type: { 

@@ -40,6 +40,9 @@ export const complaintsAdminApi = {
   getAll: (params) => adminApi.get('/admin/complaints', { params }),
   getById: (id) => adminApi.get(`/admin/complaints/${id}`),
   update: (id, data) => adminApi.patch(`/admin/complaints/${id}`, data),
+  updateStatus: (id, status) => adminApi.patch(`/admin/complaints/${id}/status`, { status }),
+  verifyResolution: (id, data) => adminApi.post(`/admin/complaints/${id}/verify-resolution`, data),
+  resolveComplaint: (id, data) => adminApi.post(`/admin/complaints/${id}/resolve`, data),
   delete: (id) => adminApi.delete(`/admin/complaints/${id}`),
   approveResolution: (id) => adminApi.patch(`/admin/complaints/${id}/approve-resolution`),
   rejectResolution: (id, data) => adminApi.patch(`/admin/complaints/${id}/reject-resolution`, data),
@@ -49,6 +52,7 @@ export const complaintsAdminApi = {
 export const departmentsAdminApi = {
   getAll: () => adminApi.get('/admin/departments'),
   getById: (id) => adminApi.get(`/admin/departments/${id}`),
+  getDepartmentComplaints: (deptSlug, params) => adminApi.get(`/admin/departments/${deptSlug}/complaints`, { params }),
   create: (data) => adminApi.post('/admin/departments', data),
   update: (id, data) => adminApi.put(`/admin/departments/${id}`, data),
 };

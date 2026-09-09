@@ -27,6 +27,7 @@ import { AdminDashboardPage } from '../pages/admin/AdminDashboardPage';
 import { AdminComplaintsPage } from '../pages/admin/AdminComplaintsPage';
 import { AdminComplaintDetailPage } from '../pages/admin/AdminComplaintDetailPage';
 import { AdminDepartmentsPage } from '../pages/admin/AdminDepartmentsPage';
+import { AdminDepartmentComplaintsPage } from '../pages/admin/AdminDepartmentComplaintsPage';
 import { AdminWorkersPage } from '../pages/admin/AdminWorkersPage';
 import { AdminMapPage } from '../pages/admin/AdminMapPage';
 import { AdminAnalyticsPage } from '../pages/admin/AdminAnalyticsPage';
@@ -160,6 +161,7 @@ export const router = createBrowserRouter([
       { path: '/government/complaints', element: <AdminComplaintsPage /> },
       { path: '/government/complaints/:id', element: <AdminComplaintDetailPage /> },
       { path: '/government/departments', element: <AdminDepartmentsPage /> },
+      { path: '/government/departments/:department', element: <AdminDepartmentComplaintsPage /> },
       { path: '/government/workers', element: <AdminWorkersPage /> },
       { path: '/government/map', element: <AdminMapPage /> },
       { path: '/government/analytics', element: <AdminAnalyticsPage /> },
@@ -175,6 +177,7 @@ export const router = createBrowserRouter([
       { path: '/admin/complaints', element: <Navigate to="/government/complaints" replace /> },
       { path: '/admin/complaints/:id', element: <AdminComplaintDetailPage /> },
       { path: '/admin/departments', element: <Navigate to="/government/departments" replace /> },
+      { path: '/admin/departments/:department', element: <AdminDepartmentComplaintsPage /> },
       { path: '/admin/workers', element: <Navigate to="/government/workers" replace /> },
       { path: '/admin/map', element: <Navigate to="/government/map" replace /> },
       { path: '/admin/analytics', element: <Navigate to="/government/analytics" replace /> },
