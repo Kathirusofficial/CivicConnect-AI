@@ -16,6 +16,7 @@ const navItems = [
   { to: '/government/workers', icon: HardHat, label: 'Workers', emoji: '👷' },
   { to: '/government/map', icon: MapPin, label: 'Live Civic Map', emoji: '📍' },
   { to: '/government/analytics', icon: BarChart3, label: 'Analytics', emoji: '📊' },
+  { to: '/government/intelligence', icon: Sparkles, label: 'Civic Intelligence', emoji: '🏛️', badge: 'AI' },
   { to: '/government/predictive', icon: BrainCircuit, label: 'Predictive Intelligence', emoji: '🧠' },
   { to: '/government/predictions', icon: BrainCircuit, label: 'Predictive Planning', emoji: '🔮' },
   { to: '/government/notifications', icon: Bell, label: 'Notifications', emoji: '🔔' },

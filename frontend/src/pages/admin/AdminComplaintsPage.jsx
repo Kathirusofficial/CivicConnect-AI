@@ -13,8 +13,8 @@ const aiLevelColors = {
 };
 const statusColors = { Pending: 'text-yellow-400 bg-yellow-500/15', Verified: 'text-blue-400 bg-blue-500/15', Assigned: 'text-purple-400 bg-purple-500/15', 'In Progress': 'text-orange-400 bg-orange-500/15', Resolved: 'text-emerald-400 bg-emerald-500/15', Rejected: 'text-red-400 bg-red-500/15' };
 
-const STATUSES = ['', 'Pending', 'Verified', 'Assigned', 'In Progress', 'Resolved', 'Rejected'];
-const PRIORITIES = ['', 'Low', 'Medium', 'High', 'Emergency'];
+const STATUSES = ['', 'active', 'Pending', 'Verified', 'Assigned', 'In Progress', 'Resolved', 'Rejected'];
+const PRIORITIES = ['', 'Low', 'Medium', 'High', 'Emergency', 'Critical'];
 const AI_LEVELS = ['', 'Critical', 'High', 'Medium', 'Low'];
 const CATEGORIES = ['', 'Road Damage', 'Electricity', 'Water Supply', 'Garbage Collection', 'Traffic Signal', 'Street Light', 'Drainage', 'Parks', 'Others'];
 

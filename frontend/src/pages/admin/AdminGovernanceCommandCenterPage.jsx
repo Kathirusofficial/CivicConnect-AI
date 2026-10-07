@@ -265,43 +265,123 @@ export const AdminGovernanceCommandCenterPage = () => {
 
       {/* 2. TOP KPI ROW */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-        <div className="p-3.5 rounded-2xl bg-[#161b26] border border-cyan-500/20">
-          <span className="text-[10px] text-surface-400 block uppercase font-bold">Active Incidents</span>
-          <p className="text-xl font-black text-white mt-1">{overview?.activeIncidents ?? 0}</p>
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="View active incidents"
+          onClick={() => navigate('/government/complaints?status=active')}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && navigate('/government/complaints?status=active')}
+          className="p-3.5 rounded-2xl bg-[#161b26] border border-cyan-500/30 cursor-pointer hover:border-cyan-400 hover:bg-[#1c2333] hover:scale-[1.02] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 transition-all duration-200 group"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-surface-400 group-hover:text-cyan-300 block uppercase font-bold transition-colors">Active Incidents</span>
+            <ChevronRight size={12} className="text-surface-500 group-hover:text-cyan-400 group-hover:translate-x-0.5 transition-all" />
+          </div>
+          <p className="text-xl font-black text-white group-hover:text-cyan-300 mt-1 transition-colors">{overview?.activeIncidents ?? 0}</p>
         </div>
 
-        <div className="p-3.5 rounded-2xl bg-[#161b26] border border-red-500/30">
-          <span className="text-[10px] text-red-400 block uppercase font-bold">Critical Level</span>
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="View critical level incidents"
+          onClick={() => navigate('/government/complaints?aiPriorityLevel=Critical')}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && navigate('/government/complaints?aiPriorityLevel=Critical')}
+          className="p-3.5 rounded-2xl bg-[#161b26] border border-red-500/40 cursor-pointer hover:border-red-400 hover:bg-[#20181d] hover:scale-[1.02] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 transition-all duration-200 group"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-red-400 block uppercase font-bold">Critical Level</span>
+            <ChevronRight size={12} className="text-red-500/70 group-hover:text-red-400 group-hover:translate-x-0.5 transition-all" />
+          </div>
           <p className="text-xl font-black text-red-400 mt-1">{overview?.criticalIncidents ?? 0}</p>
         </div>
 
-        <div className="p-3.5 rounded-2xl bg-[#161b26] border border-amber-500/20">
-          <span className="text-[10px] text-amber-400 block uppercase font-bold">SLA Crises</span>
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="View SLA crises"
+          onClick={() => navigate('/government/intelligence?tab=sla&risk=HIGH')}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && navigate('/government/intelligence?tab=sla&risk=HIGH')}
+          className="p-3.5 rounded-2xl bg-[#161b26] border border-amber-500/30 cursor-pointer hover:border-amber-400 hover:bg-[#211d18] hover:scale-[1.02] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 transition-all duration-200 group"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-amber-400 block uppercase font-bold">SLA Crises</span>
+            <ChevronRight size={12} className="text-amber-500/70 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all" />
+          </div>
           <p className="text-xl font-black text-amber-300 mt-1">{overview?.slaCrises ?? 0}</p>
         </div>
 
-        <div className="p-3.5 rounded-2xl bg-[#161b26] border border-yellow-500/20">
-          <span className="text-[10px] text-yellow-400 block uppercase font-bold">Overloaded Depts</span>
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="View overloaded departments"
+          onClick={() => navigate('/government/departments?filter=overloaded')}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && navigate('/government/departments?filter=overloaded')}
+          className="p-3.5 rounded-2xl bg-[#161b26] border border-yellow-500/30 cursor-pointer hover:border-yellow-400 hover:bg-[#211f18] hover:scale-[1.02] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400 transition-all duration-200 group"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-yellow-400 block uppercase font-bold">Overloaded Depts</span>
+            <ChevronRight size={12} className="text-yellow-500/70 group-hover:text-yellow-400 group-hover:translate-x-0.5 transition-all" />
+          </div>
           <p className="text-xl font-black text-yellow-300 mt-1">{overview?.overloadedDepts ?? 0}</p>
         </div>
 
-        <div className="p-3.5 rounded-2xl bg-[#161b26] border border-purple-500/20">
-          <span className="text-[10px] text-purple-400 block uppercase font-bold">Emergency Clusters</span>
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="View emergency clusters on map"
+          onClick={() => navigate('/government/map?filter=emergency')}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && navigate('/government/map?filter=emergency')}
+          className="p-3.5 rounded-2xl bg-[#161b26] border border-purple-500/30 cursor-pointer hover:border-purple-400 hover:bg-[#1e1728] hover:scale-[1.02] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 transition-all duration-200 group"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-purple-400 block uppercase font-bold">Emergency Clusters</span>
+            <ChevronRight size={12} className="text-purple-500/70 group-hover:text-purple-400 group-hover:translate-x-0.5 transition-all" />
+          </div>
           <p className="text-xl font-black text-purple-300 mt-1">{overview?.emergencyClusters ?? 0}</p>
         </div>
 
-        <div className="p-3.5 rounded-2xl bg-[#161b26] border border-emerald-500/20">
-          <span className="text-[10px] text-emerald-400 block uppercase font-bold">Pending Preventive</span>
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="View pending preventive actions"
+          onClick={() => navigate('/government/predictions?filter=pending')}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && navigate('/government/predictions?filter=pending')}
+          className="p-3.5 rounded-2xl bg-[#161b26] border border-emerald-500/30 cursor-pointer hover:border-emerald-400 hover:bg-[#15231c] hover:scale-[1.02] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 transition-all duration-200 group"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-emerald-400 block uppercase font-bold">Pending Preventive</span>
+            <ChevronRight size={12} className="text-emerald-500/70 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all" />
+          </div>
           <p className="text-xl font-black text-emerald-400 mt-1">{overview?.pendingPreventiveActions ?? 0}</p>
         </div>
 
-        <div className="p-3.5 rounded-2xl bg-[#161b26] border border-blue-500/20">
-          <span className="text-[10px] text-blue-400 block uppercase font-bold">Available Crews</span>
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="View available field crews"
+          onClick={() => navigate('/government/workers?status=Available')}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && navigate('/government/workers?status=Available')}
+          className="p-3.5 rounded-2xl bg-[#161b26] border border-blue-500/30 cursor-pointer hover:border-blue-400 hover:bg-[#161e29] hover:scale-[1.02] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 transition-all duration-200 group"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-blue-400 block uppercase font-bold">Available Crews</span>
+            <ChevronRight size={12} className="text-blue-500/70 group-hover:text-blue-400 group-hover:translate-x-0.5 transition-all" />
+          </div>
           <p className="text-xl font-black text-blue-300 mt-1">{overview?.availableWorkers ?? 0} / {overview?.totalWorkers ?? 0}</p>
         </div>
 
-        <div className="p-3.5 rounded-2xl bg-[#161b26] border border-green-500/20">
-          <span className="text-[10px] text-green-400 block uppercase font-bold">SLA Compliance</span>
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="View SLA compliance analytics"
+          onClick={() => navigate('/government/analytics?section=sla')}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && navigate('/government/analytics?section=sla')}
+          className="p-3.5 rounded-2xl bg-[#161b26] border border-green-500/30 cursor-pointer hover:border-green-400 hover:bg-[#16241b] hover:scale-[1.02] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400 transition-all duration-200 group"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-green-400 block uppercase font-bold">SLA Compliance</span>
+            <ChevronRight size={12} className="text-green-500/70 group-hover:text-green-400 group-hover:translate-x-0.5 transition-all" />
+          </div>
           <p className="text-xl font-black text-green-300 mt-1">{overview?.responseCompliance ?? '95%'}</p>
         </div>
       </div>

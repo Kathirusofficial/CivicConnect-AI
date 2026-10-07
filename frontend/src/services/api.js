@@ -67,6 +67,9 @@ export const complaintAPI = {
   create: (data) => api.post('/complaints', data),
   update: (id, data) => api.put(`/complaints/${id}`, data),
   delete: (id) => api.delete(`/complaints/${id}`),
+  getConsensus: (id) => api.get(`/complaints/${id}/consensus`),
+  supportComplaint: (id) => api.post(`/complaints/${id}/support`),
+  removeSupport: (id) => api.delete(`/complaints/${id}/support`),
 };
 
 export const notificationAPI = {
@@ -83,6 +86,10 @@ export const aiAPI = {
 export const feedbackAPI = {
   submitFeedback: (complaintId, data) => api.post(`/feedback/${complaintId}`, data),
   getFeedback: (complaintId) => api.get(`/feedback/${complaintId}`),
+};
+
+export const publicAPI = {
+  getStats: () => api.get('/public/stats'),
 };
 
 export default api;

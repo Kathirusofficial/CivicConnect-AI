@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { 
-  ArrowLeft, MapPin, Calendar, Clock, User, MessageSquare, Star, CheckCircle, Image as ImageIcon, AlertCircle, Loader2, Shield, Sparkles
+  ArrowLeft, MapPin, Calendar, Clock, User, MessageSquare, Star, CheckCircle, Image as ImageIcon, AlertCircle, Loader2, Shield, Sparkles, ThumbsUp
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { PageTransition } from '../../components/animations/PageTransition';
@@ -19,6 +19,7 @@ export const ComplaintDetailsPage = () => {
   const [comment, setComment] = useState('');
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [feedbackSuccess, setFeedbackSuccess] = useState(false);
+  const [isSupporting, setIsSupporting] = useState(false);
 
   const { data: complaintData, isLoading, error } = useQuery({
     queryKey: ['complaint', id],
@@ -29,6 +30,33 @@ export const ComplaintDetailsPage = () => {
     enabled: !!id,
     refetchOnWindowFocus: true
   });
+
+  const { data: consensusData, refetch: refetchConsensus } = useQuery({
+    queryKey: ['consensus', id],
+    queryFn: async () => {
+      const res = await complaintAPI.getConsensus(id);
+      return res.data;
+    },
+    enabled: !!id,
+  });
+
+  const handleToggleSupport = async () => {
+    if (isSupporting) return;
+    setIsSupporting(true);
+    try {
+      if (consensusData?.userSupported) {
+        await complaintAPI.removeSupport(id);
+      } else {
+        await complaintAPI.supportComplaint(id);
+      }
+      await refetchConsensus();
+      queryClient.invalidateQueries({ queryKey: ['complaint', id] });
+    } catch (err) {
+      alert(err.response?.data?.message || err.message || 'Failed to update support status');
+    } finally {
+      setIsSupporting(false);
+    }
+  };
 
   const complaint = complaintData;
 
@@ -393,6 +421,64 @@ export const ComplaintDetailsPage = () => {
 
           {/* Sidebar */}
           <div className="space-y-6">
+            {/* Citizen Consensus & Support Card */}
+            <FadeIn delay={0.15}>
+              <div className="glass-strong rounded-2xl p-6 shadow-glass border border-brand-500/30 bg-gradient-to-br from-brand-500/10 via-purple-500/5 to-surface-900/50 space-y-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 rounded-lg bg-brand-500/20 text-brand-500">
+                      <ThumbsUp size={18} />
+                    </span>
+                    <h3 className="font-semibold text-surface-900 dark:text-surface-50 text-base">
+                      Citizen Consensus
+                    </h3>
+                  </div>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${
+                    consensusData?.impactLevel === 'CRITICAL' ? 'bg-red-500/20 text-red-500 border border-red-500/30' :
+                    consensusData?.impactLevel === 'HIGH' ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30' :
+                    consensusData?.impactLevel === 'MEDIUM' ? 'bg-blue-500/20 text-blue-500 border border-blue-500/30' :
+                    'bg-slate-500/20 text-slate-400'
+                  }`}>
+                    {consensusData?.impactLevel || 'COMMUNITY'} IMPACT
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between bg-surface-100/70 dark:bg-surface-900/80 p-3.5 rounded-xl border border-surface-200/50 dark:border-surface-800/50">
+                  <div>
+                    <p className="text-2xl font-black text-surface-900 dark:text-surface-50">
+                      {consensusData?.supportCount ?? complaint?.supportCount ?? 0}
+                    </p>
+                    <p className="text-[11px] text-surface-500 font-medium">Citizen Supporters</p>
+                  </div>
+                  <button
+                    onClick={handleToggleSupport}
+                    disabled={isSupporting}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-sm ${
+                      consensusData?.userSupported
+                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                        : 'bg-brand-600 hover:bg-brand-700 text-white'
+                    }`}
+                  >
+                    <ThumbsUp size={14} className={consensusData?.userSupported ? 'fill-current' : ''} />
+                    {isSupporting ? 'Updating...' : consensusData?.userSupported ? 'Supported ✓' : 'Support Issue'}
+                  </button>
+                </div>
+
+                {consensusData?.civicImpactScore !== undefined && (
+                  <div className="grid grid-cols-2 gap-2 pt-1 text-xs">
+                    <div className="p-2.5 rounded-lg bg-surface-50 dark:bg-surface-900/40 border border-surface-200 dark:border-surface-800">
+                      <span className="text-surface-400 block text-[10px] font-semibold uppercase">Impact Score</span>
+                      <span className="font-bold text-brand-600 dark:text-brand-400 text-sm">{consensusData.civicImpactScore} / 100</span>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-surface-50 dark:bg-surface-900/40 border border-surface-200 dark:border-surface-800">
+                      <span className="text-surface-400 block text-[10px] font-semibold uppercase">Priority Multiplier</span>
+                      <span className="font-bold text-purple-600 dark:text-purple-400 text-sm">{consensusData.priorityMultiplier || '1.0x'}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </FadeIn>
+
             <FadeIn delay={0.2}>
               <div className="glass-strong rounded-2xl p-6 shadow-glass border border-surface-200 dark:border-surface-800">
                 <h3 className="font-semibold text-surface-900 dark:text-surface-50 mb-4 border-b border-surface-200 dark:border-surface-800 pb-2">Status & Assignment</h3>

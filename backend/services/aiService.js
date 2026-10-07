@@ -739,9 +739,12 @@ const verifyComplaintResolution = async ({
   resolutionNotes,
   officerLatitude,
   officerLongitude,
+  gpsAccuracy = null,
+  reverseGeocodedAddress = '',
   userId
 }) => {
-  const maxRadiusMeters = Number(process.env.COMPLAINT_LOCATION_RADIUS_METERS) || 150;
+  const maxRadiusMeters = Number(process.env.COMPLAINT_LOCATION_RADIUS_METERS) || 100;
+  const minGpsAccuracyMeters = Number(process.env.MIN_GPS_ACCURACY_METERS) || 100;
   let distanceMeters = null;
   let locationVerified = false;
   let locationReason = '';
@@ -756,6 +759,10 @@ const verifyComplaintResolution = async ({
                            officerLongitude !== undefined && officerLongitude !== null &&
                            !isNaN(Number(officerLongitude)) && Number(officerLongitude) !== 0;
 
+  const parsedAccuracy = (gpsAccuracy !== null && gpsAccuracy !== undefined && !isNaN(Number(gpsAccuracy)))
+    ? Number(gpsAccuracy)
+    : null;
+
   if (hasComplaintCoords && hasOfficerCoords) {
     distanceMeters = calculateHaversineDistance(
       Number(complaint.latitude),
@@ -764,9 +771,14 @@ const verifyComplaintResolution = async ({
       Number(officerLongitude)
     );
 
-    if (distanceMeters !== null && distanceMeters <= maxRadiusMeters) {
+    const isAccuracyAcceptable = parsedAccuracy === null || parsedAccuracy <= minGpsAccuracyMeters;
+
+    if (!isAccuracyAcceptable) {
+      locationVerified = false;
+      locationReason = `Officer GPS accuracy (${parsedAccuracy}m) is too low (max allowed: ${minGpsAccuracyMeters}m). Please enable high-precision GPS.`;
+    } else if (distanceMeters !== null && distanceMeters <= maxRadiusMeters) {
       locationVerified = true;
-      locationReason = `Officer GPS verified on-site (${distanceMeters}m from complaint location, permitted: ${maxRadiusMeters}m).`;
+      locationReason = `Officer GPS verified on-site (${distanceMeters}m from complaint location, permitted radius: ${maxRadiusMeters}m).`;
     } else {
       locationVerified = false;
       locationReason = `Officer GPS is ${distanceMeters}m away from the reported complaint site (max allowed: ${maxRadiusMeters}m).`;
@@ -774,11 +786,11 @@ const verifyComplaintResolution = async ({
   } else if (!hasComplaintCoords) {
     // Original complaint did not record GPS coordinates
     locationVerified = true;
-    locationReason = 'Complaint has no GPS benchmark on file. Location marked as verified/bypassed.';
+    locationReason = 'Complaint has no benchmark GPS coordinates on file. Location verified by officer address record.';
   } else {
     // Complaint has GPS but officer did not provide GPS
     locationVerified = false;
-    locationReason = 'Officer GPS coordinates are required for on-site verification.';
+    locationReason = 'Officer GPS coordinates are required for on-site location verification.';
   }
 
   // Multimodal Vision Verification
@@ -831,9 +843,11 @@ const verifyComplaintResolution = async ({
     locationVerified,
     officerLatitude: hasOfficerCoords ? Number(officerLatitude) : null,
     officerLongitude: hasOfficerCoords ? Number(officerLongitude) : null,
+    gpsAccuracy: parsedAccuracy,
     complaintLatitude: hasComplaintCoords ? Number(complaint.latitude) : null,
     complaintLongitude: hasComplaintCoords ? Number(complaint.longitude) : null,
     distanceMeters,
+    reverseGeocodedAddress: reverseGeocodedAddress || '',
     aiReason: combinedReason,
     recommendation: aiResult.recommendation || (finalStatus === 'VERIFIED' ? 'Approved for official closure.' : 'Please re-verify location on site and upload clear photo evidence.'),
     verifiedAt: new Date(),

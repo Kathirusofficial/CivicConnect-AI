@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Search, AlertCircle, Clock, MapPin, FileText, ChevronRight, CheckCircle, XCircle, Plus, Loader2 } from 'lucide-react';
+import { ArrowLeft, Search, AlertCircle, Clock, MapPin, FileText, ChevronRight, CheckCircle, XCircle, Plus, Loader2, ThumbsUp } from 'lucide-react';
 import { PageTransition } from '../../components/animations/PageTransition';
 import { FadeIn, StaggerContainer, StaggerItem } from '../../components/animations/FadeIn';
 import { complaintAPI } from '../../services/api';
@@ -175,6 +175,11 @@ export const ComplaintsListPage = () => {
                         <span className="font-mono bg-surface-100 dark:bg-surface-800 px-2 py-0.5 rounded text-brand-600 dark:text-brand-400 font-semibold">{trackingId}</span>
                         <span className="flex items-center gap-1"><MapPin size={13} /> {deptName}</span>
                         <span className="flex items-center gap-1"><Clock size={13} /> Reported: {dateStr}</span>
+                        {complaint.supportCount > 0 && (
+                          <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                            <ThumbsUp size={12} /> {complaint.supportCount} Supported
+                          </span>
+                        )}
                         {complaint.address && (
                           <span className="truncate max-w-xs text-surface-400">• {complaint.address}</span>
                         )}

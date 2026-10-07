@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Building2, FileText, CheckCircle2, Clock, HardHat, ChevronRight, Zap, Droplets, Truck, TrafficCone, Trash2, Activity, Lightbulb, Globe, BrainCircuit, AlertTriangle, Sparkles, ArrowUpRight } from 'lucide-react';
 import { departmentsAdminApi, predictionsAdminApi } from '../../services/adminApi';
@@ -34,10 +34,16 @@ export const getDepartmentSlug = (deptName) => {
 
 export const AdminDepartmentsPage = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [filter, setFilter] = useState(searchParams.get('filter') || '');
   const [departments, setDepartments] = useState([]);
   const [predictionsMap, setPredictionsMap] = useState({});
   const [selectedDepartment, setSelectedDepartment] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setFilter(searchParams.get('filter') || '');
+  }, [searchParams]);
 
   useEffect(() => {
     setLoading(true);
@@ -56,6 +62,19 @@ export const AdminDepartmentsPage = () => {
     }).finally(() => setLoading(false));
   }, []);
 
+  const isDeptOverloaded = (dept) => {
+    const pRisk = predictionsMap[dept.name]?.overloadRisk;
+    if (pRisk === 'Overloaded') return true;
+    if (dept.aiWorkload === 'Overloaded' || dept.aiWorkload === 'Critical') return true;
+    const active = (dept.liveStats?.pending || 0) + (dept.liveStats?.inProgress || 0);
+    return active >= 3;
+  };
+
+  const filteredDepartments = departments.filter(dept => {
+    if (filter === 'overloaded') return isDeptOverloaded(dept);
+    return true;
+  });
+
   const handleCardClick = (dept) => {
     setSelectedDepartment(dept);
     const slug = getDepartmentSlug(dept.name);
@@ -68,16 +87,45 @@ export const AdminDepartmentsPage = () => {
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
             Department Management
+            {filter === 'overloaded' && (
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 font-bold">
+                ⚠️ Overloaded Departments Filter
+              </span>
+            )}
           </h1>
           <p className="text-surface-400 text-sm mt-0.5">Click any department card to manage complaints and execute resolutions</p>
         </div>
-        <div className="text-xs text-brand-300 bg-brand-500/10 border border-brand-500/20 px-3 py-1.5 rounded-xl w-fit">
-          {departments.length} Departments Active
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setFilter(''); setSearchParams({}); }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              !filter ? 'bg-brand-600 text-white shadow-md' : 'bg-surface-800/80 text-surface-400 border border-surface-700'
+            }`}
+          >
+            All ({departments.length})
+          </button>
+          <button
+            onClick={() => { setFilter('overloaded'); setSearchParams({ filter: 'overloaded' }); }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              filter === 'overloaded'
+                ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 shadow-md'
+                : 'bg-surface-800/80 text-surface-400 border border-surface-700 hover:text-yellow-300'
+            }`}
+          >
+            Overloaded ({departments.filter(isDeptOverloaded).length})
+          </button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {departments.map((dept, i) => {
+        {filteredDepartments.length === 0 ? (
+          <div className="col-span-full p-8 rounded-2xl bg-surface-900/60 border border-surface-800 text-center space-y-2">
+            <CheckCircle2 size={32} className="mx-auto text-emerald-400" />
+            <p className="text-sm font-bold text-white">No Overloaded Departments</p>
+            <p className="text-xs text-surface-400">All municipal departments are currently operating within capacity limits.</p>
+          </div>
+        ) : (
+          filteredDepartments.map((dept, i) => {
           const Icon = deptIcons[dept.name] || Building2;
           const grad = deptGradients[i % deptGradients.length];
           const isSelected = selectedDepartment?._id === dept._id;
@@ -168,7 +216,7 @@ export const AdminDepartmentsPage = () => {
               </div>
             </motion.div>
           );
-        })}
+        }))}
       </div>
 
       {/* Expanded Detail with Phase 8 Workforce Planning */}

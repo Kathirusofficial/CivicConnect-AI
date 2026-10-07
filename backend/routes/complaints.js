@@ -220,4 +220,140 @@ router.get('/', protect, async (req, res) => {
   }
 });
 
+const ComplaintSupport = require('../models/ComplaintSupport');
+
+// POST /api/complaints/:id/support - Support a civic complaint (Citizen)
+router.post('/:id/support', protect, async (req, res) => {
+  try {
+    const complaintId = req.params.id;
+    const userId = req.user._id;
+
+    const complaint = await Complaint.findById(complaintId);
+    if (!complaint) {
+      return res.status(404).json({ success: false, message: 'Complaint not found' });
+    }
+
+    try {
+      await ComplaintSupport.create({ complaintId, userId });
+    } catch (err) {
+      if (err.code === 11000) {
+        return res.status(400).json({ success: false, message: 'You have already supported this complaint.' });
+      }
+      throw err;
+    }
+
+    // Update cached support count
+    const supportCount = await ComplaintSupport.countDocuments({ complaintId });
+    complaint.supportCount = supportCount;
+    await complaint.save();
+
+    const totalAffected = Math.max(1, complaint.duplicateCount || 1) + supportCount;
+    let communityImpactLevel = 'LOW';
+    if (totalAffected >= 35) communityImpactLevel = 'CRITICAL';
+    else if (totalAffected >= 16) communityImpactLevel = 'HIGH';
+    else if (totalAffected >= 5) communityImpactLevel = 'MEDIUM';
+
+    res.json({
+      success: true,
+      message: 'Complaint supported successfully!',
+      supportCount,
+      hasSupported: true,
+      communityImpactLevel,
+      totalAffectedCitizens: totalAffected
+    });
+  } catch (error) {
+    console.error('Error supporting complaint:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to support complaint' });
+  }
+});
+
+// DELETE /api/complaints/:id/support - Remove support from a civic complaint (Citizen)
+router.delete('/:id/support', protect, async (req, res) => {
+  try {
+    const complaintId = req.params.id;
+    const userId = req.user._id;
+
+    const complaint = await Complaint.findById(complaintId);
+    if (!complaint) {
+      return res.status(404).json({ success: false, message: 'Complaint not found' });
+    }
+
+    await ComplaintSupport.deleteOne({ complaintId, userId });
+
+    const supportCount = await ComplaintSupport.countDocuments({ complaintId });
+    complaint.supportCount = supportCount;
+    await complaint.save();
+
+    const totalAffected = Math.max(1, complaint.duplicateCount || 1) + supportCount;
+    let communityImpactLevel = 'LOW';
+    if (totalAffected >= 35) communityImpactLevel = 'CRITICAL';
+    else if (totalAffected >= 16) communityImpactLevel = 'HIGH';
+    else if (totalAffected >= 5) communityImpactLevel = 'MEDIUM';
+
+    res.json({
+      success: true,
+      message: 'Support removed successfully',
+      supportCount,
+      hasSupported: false,
+      communityImpactLevel,
+      totalAffectedCitizens: totalAffected
+    });
+  } catch (error) {
+    console.error('Error removing support:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to remove support' });
+  }
+});
+
+// GET /api/complaints/:id/consensus - Get community consensus & support metrics
+router.get('/:id/consensus', async (req, res) => {
+  try {
+    const complaintId = req.params.id;
+    const complaint = await Complaint.findById(complaintId);
+    if (!complaint) {
+      return res.status(404).json({ success: false, message: 'Complaint not found' });
+    }
+
+    const supportCount = await ComplaintSupport.countDocuments({ complaintId });
+    
+    // Check if optional authenticated user has supported
+    let hasSupported = false;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const jwt = require('jsonwebtoken');
+        const token = authHeader.split(' ')[1];
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'supersecret');
+        if (decoded && (decoded.id || decoded._id)) {
+          const uId = decoded.id || decoded._id;
+          const supportDoc = await ComplaintSupport.findOne({ complaintId, userId: uId });
+          hasSupported = Boolean(supportDoc);
+        }
+      } catch (e) {
+        // Unauthenticated or invalid token
+      }
+    }
+
+    const duplicateReportsCount = Math.max(1, complaint.duplicateCount || 1);
+    const totalAffectedCitizens = (duplicateReportsCount - 1) + 1 + supportCount;
+
+    let communityImpactLevel = 'LOW';
+    if (totalAffectedCitizens >= 35) communityImpactLevel = 'CRITICAL';
+    else if (totalAffectedCitizens >= 16) communityImpactLevel = 'HIGH';
+    else if (totalAffectedCitizens >= 5) communityImpactLevel = 'MEDIUM';
+
+    res.json({
+      success: true,
+      complaintId,
+      supportCount,
+      hasSupported,
+      duplicateReportsCount,
+      totalAffectedCitizens,
+      communityImpactLevel
+    });
+  } catch (error) {
+    console.error('Error fetching consensus:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch community consensus metrics' });
+  }
+});
+
 module.exports = router;

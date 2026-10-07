@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { useQueryClient } from '@tanstack/react-query';
 import { 
-  ArrowLeft, ArrowRight, Check, MapPin, UploadCloud, X, Camera, AlertCircle, FileText, CheckCircle, 
+  ArrowLeft, ArrowRight, Check, MapPin, UploadCloud, X, Camera, AlertCircle, FileText, CheckCircle, CheckCircle2,
   Sparkles, Loader2, RefreshCw, Shield, AlertTriangle, CheckSquare, ExternalLink, Layers, Copy
 } from 'lucide-react';
 import { useComplaintStore } from '../../store/complaintStore';
@@ -13,6 +13,8 @@ import { FadeIn } from '../../components/animations/FadeIn';
 import { CategorySelect, PrioritySelect, CATEGORIES, PRIORITIES } from '../../components/ui/CustomSelects';
 import { AppInput, AppTextarea, AppMediaCapture } from '../../components/ui/FormControls';
 import { complaintAPI, aiAPI } from '../../services/api';
+import { GoogleMapLocationPicker } from '../../components/common/GoogleMapLocationPicker';
+import { reverseGeocodeGoogle } from '../../services/googleMapsService';
 
 
 export const NewComplaintPage = () => {
@@ -24,6 +26,13 @@ export const NewComplaintPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedId, setSubmittedId] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Location Detection State
+  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+  const [isGeocodingAddress, setIsGeocodingAddress] = useState(false);
+  const [locationDetectionStatus, setLocationDetectionStatus] = useState(null);
+  const [locationErrorMsg, setLocationErrorMsg] = useState('');
+  const [currentGpsData, setCurrentGpsData] = useState(null);
 
   // AI Classification state
   const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
@@ -39,14 +48,137 @@ export const NewComplaintPage = () => {
 
   // Load drafted form data from localStorage or provide defaults
   const getDraft = () => {
-    const draft = localStorage.getItem('complaintDraft');
-    return draft ? JSON.parse(draft) : { title: '', category: '', description: '', priority: '', address: '', landmark: '' };
+    try {
+      const draft = localStorage.getItem('complaintDraft');
+      if (draft) {
+        const parsed = JSON.parse(draft);
+        if (parsed && typeof parsed.address === 'string' && (parsed.address.includes('Coordinates Recorded') || parsed.address.startsWith('Lat:'))) {
+          parsed.address = '';
+          localStorage.setItem('complaintDraft', JSON.stringify(parsed));
+        }
+        return parsed;
+      }
+    } catch (e) {
+      console.warn('Failed to parse complaint draft:', e);
+    }
+    return { title: '', category: '', description: '', priority: '', address: '', landmark: '' };
   };
 
   const { register, handleSubmit, watch, setValue, formState: { errors, isValid }, trigger, control } = useForm({
     defaultValues: getDraft(),
     mode: 'onTouched'
   });
+
+  const handleDetectCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationDetectionStatus('error');
+      setLocationErrorMsg('Geolocation is not supported by your browser.');
+      return;
+    }
+
+    setIsDetectingLocation(true);
+    setIsGeocodingAddress(false);
+    setLocationDetectionStatus(null);
+    setLocationErrorMsg('');
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const acc = position.coords.accuracy ? Math.round(position.coords.accuracy) : null;
+
+        // Set GPS data immediately (Lat, Lng, Accuracy) while geocoding address
+        const currentAddr = watch('address');
+        const cleanAddr = currentAddr && (currentAddr.includes('Coordinates Recorded') || currentAddr.startsWith('Lat:')) ? '' : (currentAddr || '');
+
+        setCurrentGpsData({
+          latitude: lat,
+          longitude: lng,
+          accuracy: acc,
+          address: cleanAddr,
+          reverseGeocoded: false,
+          geocodingError: null
+        });
+
+        // Update react-hook-form values for coordinates separately
+        setValue('latitude', lat, { shouldValidate: true, shouldTouch: true });
+        setValue('longitude', lng, { shouldValidate: true, shouldTouch: true });
+        if (cleanAddr !== currentAddr) {
+          setValue('address', cleanAddr, { shouldValidate: false });
+        }
+        setIsDetectingLocation(false);
+
+        // Perform Reverse Geocoding with Google Maps API
+        setIsGeocodingAddress(true);
+        const geoRes = await reverseGeocodeGoogle(lat, lng);
+        setIsGeocodingAddress(false);
+
+        const actualAddress = geoRes.formattedAddress;
+
+        if (actualAddress && !actualAddress.includes('Coordinates Recorded') && !actualAddress.startsWith('Lat:')) {
+          // Update address field ONLY with the actual Google reverse-geocoded address
+          setValue('address', actualAddress, { shouldValidate: true, shouldTouch: true });
+          setCurrentGpsData({
+            latitude: lat,
+            longitude: lng,
+            accuracy: acc,
+            address: actualAddress,
+            reverseGeocoded: true,
+            geocodingError: null
+          });
+          setLocationDetectionStatus('success');
+        } else {
+          // Do NOT put coordinates into address field. Keep address input editable.
+          const existing = watch('address');
+          if (!existing || existing.includes('Coordinates Recorded') || existing.startsWith('Lat:')) {
+            setValue('address', '', { shouldValidate: false });
+          }
+          setCurrentGpsData({
+            latitude: lat,
+            longitude: lng,
+            accuracy: acc,
+            address: watch('address') || '',
+            reverseGeocoded: false,
+            geocodingError: geoRes.error
+          });
+          setLocationDetectionStatus('warning');
+          setLocationErrorMsg(geoRes.error || 'Unable to automatically retrieve address. Please enter it manually.');
+        }
+      },
+      (error) => {
+        console.warn('Location detection error:', error);
+        let errorMsg = 'Unable to detect location. Please try again.';
+        if (error.code === error.PERMISSION_DENIED) {
+          errorMsg = 'Location permission is required to detect your current location. Please allow location access in your browser.';
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          errorMsg = 'Unable to detect your location. Please check GPS/location services and try again.';
+        } else if (error.code === error.TIMEOUT) {
+          errorMsg = 'Location acquisition timed out. Please check your GPS and try again.';
+        }
+
+        setLocationDetectionStatus('error');
+        setLocationErrorMsg(errorMsg);
+        setIsDetectingLocation(false);
+        setIsGeocodingAddress(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  };
+
+  const handleMapLocationSelect = ({ latitude, longitude, address }) => {
+    setValue('latitude', latitude, { shouldValidate: true });
+    setValue('longitude', longitude, { shouldValidate: true });
+    if (address) {
+      setValue('address', address, { shouldValidate: true });
+    }
+    setCurrentGpsData(prev => ({
+      ...(prev || {}),
+      latitude,
+      longitude,
+      address: address || prev?.address || '',
+      reverseGeocoded: Boolean(address)
+    }));
+  };
 
   const formValues = watch();
 
@@ -118,6 +250,10 @@ export const NewComplaintPage = () => {
     }
   };
 
+  const runAiClassification = async () => {
+    await runAiAnalysisAndDuplicateCheck();
+  };
+
   const handleNextStep = async () => {
     let valid = false;
     if (step === 1) {
@@ -139,16 +275,18 @@ export const NewComplaintPage = () => {
     setStep((s) => s - 1);
   };
 
-  const handleAcceptAi = () => {
+  const handleAcceptAi = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
     if (aiRecommendation) {
-      setValue('category', aiRecommendation.category);
-      setValue('priority', aiRecommendation.priority);
+      setValue('category', String(aiRecommendation.category || ''), { shouldValidate: true });
+      setValue('priority', String(aiRecommendation.priority || ''), { shouldValidate: true });
       setClassificationSource('AI Recommended');
       setIsEditingAfterAi(false);
     }
   };
 
-  const handleModifySelection = () => {
+  const handleModifySelection = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
     setIsEditingAfterAi(true);
     setClassificationSource('Citizen Modified');
   };
@@ -161,29 +299,37 @@ export const NewComplaintPage = () => {
     setErrorMessage('');
     
     try {
+      const dupId = typeof overrideDuplicateOf === 'string' ? overrideDuplicateOf : null;
+      const cleanImages = media
+        .map(m => (typeof m === 'string' ? m : m?.url || m?.preview || ''))
+        .filter(Boolean);
+
       const payload = {
-        title: formValues.title,
-        category: formValues.category,
-        department: aiRecommendation?.department || formValues.category || 'Municipality',
-        priority: formValues.priority,
-        description: formValues.description,
-        address: formValues.address,
-        landmark: formValues.landmark || '',
-        latitude: formValues.latitude,
-        longitude: formValues.longitude,
-        images: media.map(m => m.url || m.preview || m),
-        duplicateOf: overrideDuplicateOf || selectedDuplicateToLink || undefined,
+        title: String(formValues.title || ''),
+        category: String(formValues.category || ''),
+        department: String(aiRecommendation?.department || formValues.category || 'Municipality'),
+        priority: String(formValues.priority || ''),
+        description: String(formValues.description || ''),
+        address: String(formValues.address || ''),
+        landmark: String(formValues.landmark || ''),
+        latitude: formValues.latitude != null ? Number(formValues.latitude) : null,
+        longitude: formValues.longitude != null ? Number(formValues.longitude) : null,
+        images: cleanImages,
+        duplicateOf: dupId || (typeof selectedDuplicateToLink === 'string' ? selectedDuplicateToLink : undefined),
         aiAnalysis: aiRecommendation ? {
-          category: aiRecommendation.category,
-          department: aiRecommendation.department,
-          priority: aiRecommendation.priority,
-          severity: aiRecommendation.severity || 'Medium',
-          summary: aiRecommendation.summary || formValues.description,
+          category: String(aiRecommendation.category || ''),
+          department: String(aiRecommendation.department || ''),
+          priority: String(aiRecommendation.priority || ''),
+          severity: String(aiRecommendation.severity || 'Medium'),
+          summary: String(aiRecommendation.summary || formValues.description || ''),
           confidence: typeof aiRecommendation.confidence === 'number' ? aiRecommendation.confidence : 0,
-          analyzedAt: new Date(),
-          classificationSource: classificationSource
+          analyzedAt: new Date().toISOString(),
+          classificationSource: String(classificationSource || 'AI Recommended')
         } : undefined
       };
+
+      // Diagnostic serialization validation
+      JSON.stringify(payload);
 
       const res = await complaintAPI.create(payload);
       const createdComplaint = res.data?.complaint;
@@ -349,41 +495,106 @@ export const NewComplaintPage = () => {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
                 transition={{ duration: 0.3 }}
-                className="space-y-6"
+                className="space-y-5"
               >
-                <h2 className="text-xl font-semibold flex items-center gap-2"><MapPin className="text-brand-500" /> Location Details</h2>
-                <p className="text-surface-500 text-sm">Pinpoint exactly where the issue is located to help authorities find it faster.</p>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-semibold flex items-center gap-2">
+                    <MapPin className="text-brand-500" /> Location Details
+                  </h2>
+                </div>
+                <p className="text-surface-500 text-sm">Pinpoint exactly where the issue is located to help authorities find and resolve it faster.</p>
                 
-                <div className="flex flex-col sm:flex-row gap-4 mb-4">
-                  <button type="button" className="flex-1 py-3 px-4 rounded-xl border border-brand-200 dark:border-brand-800 bg-brand-50/50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300 font-medium flex items-center justify-center gap-2 hover:bg-brand-100 dark:hover:bg-brand-900/40 transition-colors">
-                    <MapPin size={18} /> Detect Current Location
+                {/* 1. Detect Current Location Button */}
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <button
+                    type="button"
+                    onClick={handleDetectCurrentLocation}
+                    disabled={isDetectingLocation}
+                    className="flex-1 py-3 px-4 rounded-xl border border-brand-300 dark:border-brand-700 bg-brand-500 text-white dark:bg-brand-600 font-medium flex items-center justify-center gap-2 hover:bg-brand-600 dark:hover:bg-brand-500 transition-colors shadow-sm disabled:opacity-50"
+                  >
+                    {isDetectingLocation ? (
+                      <>
+                        <RefreshCw size={18} className="animate-spin" />
+                        <span>Detecting your location...</span>
+                      </>
+                    ) : (
+                      <>
+                        <MapPin size={18} />
+                        <span>Detect Current Location</span>
+                      </>
+                    )}
                   </button>
                 </div>
 
-                <div className="relative w-full h-[220px] bg-surface-200 dark:bg-surface-800 rounded-2xl overflow-hidden border border-surface-300 dark:border-surface-700 flex items-center justify-center shadow-inner">
-                  <img src="https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=800&h=400&fit=crop" alt="Map Preview" className="absolute inset-0 w-full h-full object-cover opacity-70" />
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center drop-shadow-lg">
-                    <div className="w-10 h-10 bg-brand-500 text-white rounded-full flex items-center justify-center shadow-lg"><MapPin size={24} /></div>
-                    <div className="w-4 h-4 rounded-full bg-black/20 mt-1 blur-[2px]" />
+                {/* 2. Geolocation Error / Warning Cards */}
+                {locationDetectionStatus === 'error' && (
+                  <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-300 text-xs flex items-center gap-2">
+                    <AlertTriangle size={16} className="shrink-0 text-red-500" />
+                    <span>{locationErrorMsg || 'Unable to detect location. Please check GPS/location permissions and try again.'}</span>
                   </div>
-                  <div className="absolute top-4 left-4 bg-white/90 dark:bg-surface-900/90 backdrop-blur px-3 py-1.5 rounded-lg text-sm font-medium shadow-sm">
-                    Interactive Map Preview
-                  </div>
-                </div>
+                )}
 
+                {locationDetectionStatus === 'warning' && (
+                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-300 text-xs flex items-center gap-2">
+                    <AlertTriangle size={16} className="shrink-0 text-amber-500" />
+                    <span>{locationErrorMsg || 'Unable to retrieve address automatically. Please enter the address manually.'}</span>
+                  </div>
+                )}
+
+                {/* 3. Successful GPS Coordinates Badge */}
+                {currentGpsData && (
+                  <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-xs space-y-2">
+                    <div className="flex items-center justify-between font-bold">
+                      <span className="flex items-center gap-1.5">
+                        <CheckCircle2 size={16} className="text-emerald-500" />
+                        Current Location Detected Successfully
+                      </span>
+                      <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-semibold ${
+                        isGeocodingAddress 
+                          ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 animate-pulse border border-amber-500/30' 
+                          : currentGpsData.reverseGeocoded 
+                          ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30' 
+                          : 'bg-surface-500/20 text-surface-600 dark:text-surface-400 border border-surface-500/30'
+                      }`}>
+                        {isGeocodingAddress ? "Finding address..." : currentGpsData.reverseGeocoded ? "Reverse Geocoded ✓" : "Manual Address Entry Required"}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 font-mono text-[11px] bg-black/20 dark:bg-black/40 p-2.5 rounded-xl border border-emerald-500/20">
+                      <div><span className="text-surface-500 block text-[9px] uppercase font-semibold">Latitude</span>{currentGpsData.latitude?.toFixed(4)}</div>
+                      <div><span className="text-surface-500 block text-[9px] uppercase font-semibold">Longitude</span>{currentGpsData.longitude?.toFixed(4)}</div>
+                      <div><span className="text-surface-500 block text-[9px] uppercase font-semibold">GPS Accuracy</span>{currentGpsData.accuracy ? `${currentGpsData.accuracy} meters` : 'N/A'}</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 4. Interactive Google Map Location Picker */}
+                <GoogleMapLocationPicker
+                  latitude={formValues.latitude}
+                  longitude={formValues.longitude}
+                  onLocationSelect={handleMapLocationSelect}
+                  height="240px"
+                />
+
+                {/* 5. Address Inputs */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Controller
                     name="address"
                     control={control}
                     rules={{ required: "Address is required" }}
-                    render={({ field }) => (
-                      <AppInput
-                        label={<span>Address / Street <span className="text-red-500">*</span></span>}
-                        placeholder="Enter complete street address"
-                        error={errors.address}
-                        {...field}
-                      />
-                    )}
+                    render={({ field }) => {
+                      const cleanVal = field.value && (field.value.includes('Coordinates Recorded') || field.value.startsWith('Lat:')) ? '' : field.value;
+                      return (
+                        <AppInput
+                          label={<span>Address / Street <span className="text-red-500">*</span></span>}
+                          placeholder="Enter complete street address"
+                          error={errors.address}
+                          {...field}
+                          value={cleanVal || ''}
+                          onChange={(e) => field.onChange(e.target.value)}
+                        />
+                      );
+                    }}
                   />
 
                   <Controller
@@ -831,7 +1042,8 @@ export const NewComplaintPage = () => {
               </button>
             ) : (
               <button 
-                onClick={onSubmitForm}
+                type="button"
+                onClick={(e) => { e?.preventDefault(); onSubmitForm(); }}
                 disabled={isSubmitting || isAiAnalyzing}
                 className={`btn-primary bg-gradient-to-r from-emerald-500 to-emerald-600 shadow-emerald-500/30 flex items-center gap-2 ${isSubmitting || isAiAnalyzing ? 'opacity-70 cursor-wait' : ''}`}
               >

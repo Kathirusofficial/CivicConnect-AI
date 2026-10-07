@@ -1,13 +1,16 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   BrainCircuit, TrendingUp, AlertTriangle, Building2, MapPin,
   ShieldAlert, RefreshCw, CheckCircle2, Clock, Users, ArrowRight,
   Sparkles, Layers, Sliders, ChevronRight, Check, X, Bell
 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { predictionsAdminApi } from '../../services/adminApi';
 
 export const AdminPredictionsPage = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [filter, setFilter] = useState(searchParams.get('filter') || searchParams.get('status') || '');
   const [overview, setOverview] = useState(null);
   const [hotspots, setHotspots] = useState([]);
   const [deptForecasts, setDeptForecasts] = useState([]);
@@ -16,6 +19,10 @@ export const AdminPredictionsPage = () => {
   const [forecastData, setForecastData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [recalculating, setRecalculating] = useState(false);
+
+  useEffect(() => {
+    setFilter(searchParams.get('filter') || searchParams.get('status') || '');
+  }, [searchParams]);
 
   // Simulation State
   const [simDept, setSimDept] = useState('Road Department');

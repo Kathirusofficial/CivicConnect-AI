@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import { complaintsAdminApi, workersAdminApi, departmentsAdminApi } from '../../services/adminApi';
 import { useToast } from '../../components/ui/Toast';
+import { GoogleMapLocationVerifier } from '../../components/common/GoogleMapLocationVerifier';
+import { reverseGeocodeGoogle, calculateHaversineDistance, formatDistance } from '../../services/googleMapsService';
 
 const statusColors = {
   Pending: 'text-yellow-400 bg-yellow-500/15 border border-yellow-500/30',
@@ -302,32 +304,74 @@ export const AdminComplaintDetailPage = () => {
   };
 
   // Acquire Officer Current GPS Location
+  // Acquire Officer Current GPS Location & Reverse Geocode with Google Maps
   const acquireOfficerLocation = () => {
     if (!navigator.geolocation) {
-      setOfficerLocation({ latitude: null, longitude: null, accuracy: null, status: 'error', error: 'Geolocation not supported by browser' });
+      setOfficerLocation({
+        latitude: null,
+        longitude: null,
+        accuracy: null,
+        address: '',
+        distanceMeters: null,
+        allowedRadiusMeters: Number(import.meta.env.VITE_COMPLAINT_LOCATION_RADIUS_METERS) || 100,
+        isAccuracyPoor: false,
+        status: 'error',
+        error: 'Geolocation not supported by browser'
+      });
       return;
     }
 
     setIsAcquiringLocation(true);
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const acc = position.coords.accuracy ? Math.round(position.coords.accuracy) : null;
+
+        const minAccLimit = Number(import.meta.env.VITE_MIN_GPS_ACCURACY_METERS) || 100;
+        const radiusLimit = Number(import.meta.env.VITE_COMPLAINT_LOCATION_RADIUS_METERS) || 100;
+        const isPoor = acc !== null && acc > minAccLimit;
+
+        // Perform Reverse Geocoding with Google Maps Service
+        const geoRes = await reverseGeocodeGoogle(lat, lng);
+
+        // Calculate distance to complaint benchmark site
+        const dist = calculateHaversineDistance(complaint?.latitude, complaint?.longitude, lat, lng);
+
         setOfficerLocation({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy,
+          latitude: lat,
+          longitude: lng,
+          accuracy: acc,
+          address: geoRes.formattedAddress || `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`,
+          distanceMeters: dist,
+          allowedRadiusMeters: radiusLimit,
+          isAccuracyPoor: isPoor,
           status: 'success',
-          error: ''
+          error: isPoor ? `Location accuracy is too low (${acc}m). Please enable precise location and try again.` : ''
         });
         setIsAcquiringLocation(false);
       },
       (error) => {
         console.warn('Geolocation acquisition error:', error);
+        let errorMsg = 'Location permission is required to verify this resolution.';
+        if (error.code === error.PERMISSION_DENIED) {
+          errorMsg = 'Location permission is required to verify this resolution. Please enable location permission in browser settings.';
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          errorMsg = 'GPS signal unavailable. Please ensure location services are enabled on your device.';
+        } else if (error.code === error.TIMEOUT) {
+          errorMsg = 'Location acquisition timed out. Please try again.';
+        }
+
         setOfficerLocation({
           latitude: null,
           longitude: null,
           accuracy: null,
+          address: '',
+          distanceMeters: null,
+          allowedRadiusMeters: Number(import.meta.env.VITE_COMPLAINT_LOCATION_RADIUS_METERS) || 100,
+          isAccuracyPoor: false,
           status: 'error',
-          error: error.message || 'GPS location permission denied or timed out'
+          error: errorMsg
         });
         setIsAcquiringLocation(false);
       },
@@ -382,6 +426,16 @@ export const AdminComplaintDetailPage = () => {
       return;
     }
 
+    if (officerLocation.status === 'error' && !officerLocation.latitude) {
+      setResolutionError(officerLocation.error || 'Officer GPS location is required to verify resolution.');
+      return;
+    }
+
+    if (officerLocation.isAccuracyPoor) {
+      setResolutionError(`Location accuracy is too low (${officerLocation.accuracy}m). Please enable precise location and try again.`);
+      return;
+    }
+
     setIsVerifyingResolution(true);
     setResolutionError('');
 
@@ -390,14 +444,16 @@ export const AdminComplaintDetailPage = () => {
         notes: resolutionNotes.trim(),
         proofImage,
         latitude: officerLocation.latitude,
-        longitude: officerLocation.longitude
+        longitude: officerLocation.longitude,
+        accuracy: officerLocation.accuracy,
+        reverseGeocodedAddress: officerLocation.address
       });
 
       if (res.data?.success) {
         setVerificationResult(res.data.verification);
         setComplaint(res.data.complaint || complaint);
         if (res.data.verification.status === 'VERIFIED') {
-          addToast({ type: 'success', message: 'Resolution verified successfully by AI & GPS!' });
+          addToast({ type: 'success', message: 'Resolution verified successfully by AI & Google Maps GPS!' });
         } else {
           addToast({ type: 'warning', message: `Verification status: ${res.data.verification.status}` });
         }
@@ -729,34 +785,111 @@ export const AdminComplaintDetailPage = () => {
                 </button>
               </div>
 
-              {/* Officer GPS Geolocation Status */}
-              <div className="p-3.5 rounded-2xl bg-surface-900/70 border border-white/5 flex items-center justify-between flex-wrap gap-2 text-xs">
-                <div className="flex items-center gap-2">
-                  <div className={`w-2.5 h-2.5 rounded-full ${officerLocation.status === 'success' ? 'bg-emerald-400 animate-pulse' : officerLocation.status === 'error' ? 'bg-amber-400' : 'bg-cyan-400 animate-ping'}`} />
-                  <div>
-                    <p className="font-semibold text-white">
-                      {officerLocation.status === 'success'
-                        ? 'GPS Coordinates Locked'
-                        : isAcquiringLocation
-                          ? 'Acquiring GPS Coordinates...'
-                          : 'GPS Benchmark'}
-                    </p>
-                    <p className="text-[11px] text-surface-400">
-                      {officerLocation.status === 'success'
-                        ? `Lat: ${officerLocation.latitude.toFixed(4)}, Lng: ${officerLocation.longitude.toFixed(4)}`
-                        : officerLocation.error || 'Acquiring device GPS for location verification'}
-                    </p>
+              {/* Google Maps Officer Geolocation Status & Reverse Geocoding Card */}
+              <div className="space-y-3">
+                <div className="p-3.5 rounded-2xl bg-surface-900/80 border border-white/10 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-3 h-3 rounded-full ${
+                        officerLocation.status === 'success' && !officerLocation.isAccuracyPoor
+                          ? 'bg-emerald-400 animate-pulse'
+                          : officerLocation.status === 'error' || officerLocation.isAccuracyPoor
+                            ? 'bg-red-400'
+                            : 'bg-cyan-400 animate-ping'
+                      }`} />
+                      <div>
+                        <p className="font-bold text-white flex items-center gap-1.5">
+                          {officerLocation.status === 'success'
+                            ? (officerLocation.isAccuracyPoor ? '✕ GPS Accuracy Too Low' : '✓ Location Detected & Verified')
+                            : isAcquiringLocation
+                              ? 'Acquiring Device GPS...'
+                              : 'GPS Verification Required'}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={acquireOfficerLocation}
+                      disabled={isAcquiringLocation}
+                      className="px-2.5 py-1 rounded-lg bg-surface-800 hover:bg-surface-700 text-cyan-300 hover:text-white border border-cyan-500/30 text-[11px] font-medium flex items-center gap-1 transition-all"
+                    >
+                      <RefreshCw size={11} className={isAcquiringLocation ? 'animate-spin' : ''} />
+                      {officerLocation.status === 'error' ? 'Try Again' : 'Refresh GPS'}
+                    </button>
                   </div>
+
+                  {/* Geolocation Details Grid */}
+                  {officerLocation.status === 'success' ? (
+                    <div className="space-y-1.5 pt-2 border-t border-white/5 text-[11px]">
+                      <div className="grid grid-cols-3 gap-2 font-mono text-surface-300 bg-black/30 p-2 rounded-xl border border-white/5">
+                        <div><span className="text-surface-500 block text-[9px] uppercase">Latitude</span>{officerLocation.latitude?.toFixed(4)}</div>
+                        <div><span className="text-surface-500 block text-[9px] uppercase">Longitude</span>{officerLocation.longitude?.toFixed(4)}</div>
+                        <div><span className="text-surface-500 block text-[9px] uppercase">GPS Accuracy</span>{officerLocation.accuracy ? `${officerLocation.accuracy} m` : 'N/A'}</div>
+                      </div>
+
+                      <div className="p-2 rounded-xl bg-black/30 border border-white/5 space-y-0.5">
+                        <span className="text-[9px] uppercase tracking-wider text-cyan-400 font-bold block">Google Maps Reverse Geocoded Address</span>
+                        <p className="text-white font-medium truncate">{officerLocation.address || 'Address lookup pending...'}</p>
+                      </div>
+
+                      {/* Distance & Radius Verification Banner */}
+                      <div className={`p-2.5 rounded-xl border flex items-center justify-between text-xs ${
+                        officerLocation.distanceMeters !== null && officerLocation.distanceMeters <= (officerLocation.allowedRadiusMeters || 100) && !officerLocation.isAccuracyPoor
+                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                          : 'bg-red-500/10 border-red-500/30 text-red-300'
+                      }`}>
+                        <div>
+                          <p className="font-bold">
+                            {officerLocation.distanceMeters !== null && officerLocation.distanceMeters <= (officerLocation.allowedRadiusMeters || 100) && !officerLocation.isAccuracyPoor
+                              ? '✓ Location Verified'
+                              : '✕ Location Verification Failed'}
+                          </p>
+                          <p className="text-[10px] opacity-80 mt-0.5">
+                            Distance from complaint: <span className="font-mono font-bold">{formatDistance(officerLocation.distanceMeters)}</span> (Allowed: {officerLocation.allowedRadiusMeters || 100}m)
+                          </p>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          officerLocation.distanceMeters !== null && officerLocation.distanceMeters <= (officerLocation.allowedRadiusMeters || 100) && !officerLocation.isAccuracyPoor
+                            ? 'bg-emerald-500/20 text-emerald-300'
+                            : 'bg-red-500/20 text-red-300'
+                        }`}>
+                          {officerLocation.distanceMeters !== null && officerLocation.distanceMeters <= (officerLocation.allowedRadiusMeters || 100) && !officerLocation.isAccuracyPoor
+                            ? 'Pass'
+                            : 'Out of Range'}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs space-y-2">
+                      <div className="flex items-center gap-2 font-medium">
+                        <AlertTriangle size={15} className="shrink-0" />
+                        <span>{officerLocation.error || 'Location permission is required to verify this resolution.'}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={acquireOfficerLocation}
+                          className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-[11px] font-bold transition-all"
+                        >
+                          Enable Location & Try Again
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={acquireOfficerLocation}
-                  disabled={isAcquiringLocation}
-                  className="px-2.5 py-1 rounded-lg bg-surface-800 hover:bg-surface-700 text-surface-300 hover:text-white border border-white/10 text-[11px] font-medium flex items-center gap-1 transition-all"
-                >
-                  <RefreshCw size={11} className={isAcquiringLocation ? 'animate-spin' : ''} />
-                  Refresh GPS
-                </button>
+
+                {/* Interactive Google Map Component */}
+                <GoogleMapLocationVerifier
+                  complaintLat={complaint?.latitude}
+                  complaintLng={complaint?.longitude}
+                  complaintAddress={complaint?.address}
+                  officerLat={officerLocation.latitude}
+                  officerLng={officerLocation.longitude}
+                  officerAddress={officerLocation.address}
+                  distanceMeters={officerLocation.distanceMeters}
+                  allowedRadiusMeters={officerLocation.allowedRadiusMeters || 100}
+                  locationVerified={officerLocation.distanceMeters !== null && officerLocation.distanceMeters <= (officerLocation.allowedRadiusMeters || 100) && !officerLocation.isAccuracyPoor}
+                />
               </div>
 
               <form onSubmit={handleSubmitResolution} className="space-y-4">

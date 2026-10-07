@@ -62,6 +62,11 @@ const complaintSchema = new mongoose.Schema({
     type: Number, 
     default: 1 
   },
+  supportCount: {
+    type: Number,
+    default: 0,
+    index: true
+  },
   decisionSupport: {
     priorityScore: {
       type: Number,
@@ -236,9 +241,11 @@ const complaintSchema = new mongoose.Schema({
     locationVerified: { type: Boolean, default: false },
     officerLatitude: { type: Number, default: null },
     officerLongitude: { type: Number, default: null },
+    gpsAccuracy: { type: Number, default: null },
     complaintLatitude: { type: Number, default: null },
     complaintLongitude: { type: Number, default: null },
     distanceMeters: { type: Number, default: null },
+    reverseGeocodedAddress: { type: String, default: '' },
     aiReason: { type: String, default: '' },
     recommendation: { type: String, default: '' },
     verifiedAt: { type: Date, default: null },
@@ -330,6 +337,8 @@ const complaintSchema = new mongoose.Schema({
 // Compound indexes for fast candidate searching & analytics
 complaintSchema.index({ category: 1, status: 1, createdAt: -1 });
 complaintSchema.index({ latitude: 1, longitude: 1 });
+complaintSchema.index({ status: 1, priority: 1, department: 1 });
+complaintSchema.index({ createdAt: -1 });
 complaintSchema.index({ 'sla.status': 1 });
 complaintSchema.index({ 'sla.deadline': 1 });
 complaintSchema.index({ 'citizenFeedback.rating': 1 });

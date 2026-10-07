@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapPin, X, ExternalLink, AlertTriangle, Clock, CheckCircle2, Loader2, Layers, BrainCircuit, Flame, Sparkles, Users, TrendingUp } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { mapAdminApi, predictiveAdminApi } from '../../services/adminApi';
 
 const PIN_COLORS = {
@@ -30,13 +30,19 @@ const LEGEND = [
 ];
 
 export const AdminMapPage = () => {
+  const [searchParams] = useSearchParams();
   const [complaints, setComplaints] = useState([]);
   const [hotspots, setHotspots] = useState([]);
   const [showHotspotsLayer, setShowHotspotsLayer] = useState(true);
   const [selected, setSelected] = useState(null);
   const [selectedHotspot, setSelectedHotspot] = useState(null);
-  const [filter, setFilter] = useState('');
+  const [filter, setFilter] = useState(searchParams.get('filter') || searchParams.get('search') || '');
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const f = searchParams.get('filter') || searchParams.get('search') || '';
+    setFilter(f);
+  }, [searchParams]);
 
   useEffect(() => {
     Promise.all([

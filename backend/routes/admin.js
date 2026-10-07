@@ -93,11 +93,38 @@ router.get('/complaints', async (req, res) => {
         { description: searchRegex }
       ];
     }
-    if (status) query.status = status;
-    if (priority) query.priority = priority;
+    if (status) {
+      if (status.toLowerCase() === 'active') {
+        query.status = { $in: ['Pending', 'Verified', 'Assigned', 'In Progress', 'Reopened', 'Active', 'Detected', 'Acknowledged'] };
+      } else {
+        query.status = status;
+      }
+    }
+    if (priority) {
+      if (priority.toLowerCase() === 'critical' || priority.toLowerCase() === 'emergency') {
+        query.$or = [
+          { priority: 'Emergency' },
+          { 'aiAnalysis.priority': 'Emergency' },
+          { 'aiAnalysis.severity': 'Critical' },
+          { 'decisionSupport.priorityLevel': 'Critical' }
+        ];
+      } else {
+        query.priority = priority;
+      }
+    }
     if (category) query.category = { $regex: category, $options: 'i' };
     if (department) query.department = { $regex: department, $options: 'i' };
-    if (aiPriorityLevel) query['decisionSupport.priorityLevel'] = aiPriorityLevel;
+    if (aiPriorityLevel) {
+      if (aiPriorityLevel.toLowerCase() === 'critical') {
+        query.$or = [
+          { 'decisionSupport.priorityLevel': 'Critical' },
+          { 'aiAnalysis.severity': 'Critical' },
+          { priority: 'Emergency' }
+        ];
+      } else {
+        query['decisionSupport.priorityLevel'] = aiPriorityLevel;
+      }
+    }
     
     if (emergency === 'true' || emergency === true) {
       query.$or = [
@@ -404,7 +431,7 @@ router.patch('/complaints/:id/status', async (req, res) => {
 const verifyResolutionHandler = async (req, res) => {
   try {
     const mongoose = require('mongoose');
-    const { notes, proofImage, latitude, longitude } = req.body;
+    const { notes, proofImage, latitude, longitude, accuracy, reverseGeocodedAddress } = req.body;
     const { id } = req.params;
 
     if (!notes || !notes.trim()) {
@@ -440,6 +467,8 @@ const verifyResolutionHandler = async (req, res) => {
       resolutionNotes: notes.trim(),
       officerLatitude: latitude,
       officerLongitude: longitude,
+      gpsAccuracy: accuracy,
+      reverseGeocodedAddress: reverseGeocodedAddress,
       userId: req.user._id
     });
 

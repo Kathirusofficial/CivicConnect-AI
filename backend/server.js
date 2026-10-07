@@ -28,6 +28,8 @@ app.use('/api/sla', require('./routes/sla'));
 app.use('/api/performance', require('./routes/performance'));
 app.use('/api/predictions', require('./routes/predictions'));
 app.use('/api/governance', require('./routes/governance'));
+app.use('/api/public', require('./routes/public'));
+app.use('/api/government/intelligence', require('./routes/intelligence'));
 
 const PORT = process.env.PORT || 5000;
 

@@ -33,6 +33,7 @@ import { AdminMapPage } from '../pages/admin/AdminMapPage';
 import { AdminAnalyticsPage } from '../pages/admin/AdminAnalyticsPage';
 import { AdminPredictiveIntelligencePage } from '../pages/admin/AdminPredictiveIntelligencePage';
 import { AdminPredictionsPage } from '../pages/admin/AdminPredictionsPage';
+import { AdminCivicIntelligencePage } from '../pages/admin/AdminCivicIntelligencePage';
 import { AdminGovernanceCommandCenterPage } from '../pages/admin/AdminGovernanceCommandCenterPage';
 import { AdminGovernanceIncidentPage } from '../pages/admin/AdminGovernanceIncidentPage';
 import { AdminNotificationsPage } from '../pages/admin/AdminNotificationsPage';
@@ -167,6 +168,7 @@ export const router = createBrowserRouter([
       { path: '/government/analytics', element: <AdminAnalyticsPage /> },
       { path: '/government/predictive', element: <AdminPredictiveIntelligencePage /> },
       { path: '/government/predictions', element: <AdminPredictionsPage /> },
+      { path: '/government/intelligence', element: <AdminCivicIntelligencePage /> },
       { path: '/government/notifications', element: <AdminNotificationsPage /> },
       { path: '/government/users', element: <AdminUsersPage /> },
       { path: '/government/settings', element: <AdminSettingsPage /> },
@@ -183,6 +185,7 @@ export const router = createBrowserRouter([
       { path: '/admin/analytics', element: <Navigate to="/government/analytics" replace /> },
       { path: '/admin/predictive', element: <Navigate to="/government/predictive" replace /> },
       { path: '/admin/predictions', element: <Navigate to="/government/predictions" replace /> },
+      { path: '/admin/intelligence', element: <Navigate to="/government/intelligence" replace /> },
       { path: '/admin/notifications', element: <Navigate to="/government/notifications" replace /> },
       { path: '/admin/users', element: <Navigate to="/government/users" replace /> },
       { path: '/admin/settings', element: <Navigate to="/government/settings" replace /> },

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Pencil, Trash2, HardHat, Phone, X, Save } from 'lucide-react';
 import { workersAdminApi, departmentsAdminApi } from '../../services/adminApi';
@@ -69,11 +70,16 @@ const WorkerModal = ({ worker, departments, onClose, onSave }) => {
 };
 
 export const AdminWorkersPage = () => {
+  const [searchParams] = useSearchParams();
   const [workers, setWorkers] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null); // null | 'add' | worker object
-  const [filter, setFilter] = useState('');
+  const [filter, setFilter] = useState(searchParams.get('status') || '');
+
+  useEffect(() => {
+    setFilter(searchParams.get('status') || '');
+  }, [searchParams]);
 
   const fetchWorkersAndDepts = async () => {
     setLoading(true);
